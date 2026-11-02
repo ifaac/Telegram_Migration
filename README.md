@@ -1,4 +1,4 @@
-# Telegram Desktop Chat-History Migration (v9.0).
+# Telegram Desktop Chat-History Migration (v9.0)
 
 A Python tool for reconstructing a Telegram conversation in a destination channel from a **Telegram Desktop export** (`messages.html`, `messages2.html`, etc.) and the media files that accompany it. Use it as a **command-line tool** (`python -m telegram_migration`) or import it as a **Python library** (`from telegram_migration import Settings, run`).
 
