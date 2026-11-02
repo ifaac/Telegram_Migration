@@ -1,0 +1,47 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "telegram-migration"
+dynamic = ["version"]
+description = "Resumable tool and Python library that rebuilds a Telegram Desktop chat export in a channel with a Telegram bot."
+readme = "README.md"
+requires-python = ">=3.10"
+keywords = ["telegram", "telethon", "chat export", "migration", "archive"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Communications :: Chat",
+]
+dependencies = [
+    "Telethon>=1.34,<2",
+    "lxml>=4.9,<7",
+    "ijson>=3.2,<4",
+    "hachoir>=3.2,<4",
+    "nest-asyncio>=1.5,<2",
+    "python-dotenv>=1.0,<2",
+]
+
+[project.optional-dependencies]
+# Only used when a .webm video sticker needs probing and the machine has no ffmpeg/ffprobe.
+media = ["static-ffmpeg"]
+
+[project.urls]
+Homepage = "https://github.com/ifaac/Telegram_Migration"
+Issues = "https://github.com/ifaac/Telegram_Migration/issues"
+
+[project.scripts]
+telegram-migration = "telegram_migration.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["telegram_migration*"]
+
+[tool.setuptools.dynamic]
+version = { attr = "telegram_migration._version.__version__" }
