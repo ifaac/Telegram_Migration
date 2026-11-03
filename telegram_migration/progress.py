@@ -1,6 +1,6 @@
 """On-disk migration state: ID map, partial sends, deferred replies and audit logs."""
 
-import json
+import json.
 import os
 import re
 
