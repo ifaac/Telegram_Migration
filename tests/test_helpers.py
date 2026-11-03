@@ -5,7 +5,7 @@ real Telethon entity objects when dependencies are installed by requirements.txt
 """
 from __future__ import annotations
 
-import asyncio.
+import asyncio
 import json
 import os
 import tempfile
