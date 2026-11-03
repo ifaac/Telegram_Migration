@@ -140,7 +140,9 @@ settings = Settings.from_env()      # TELEGRAM_* variables, .env file, Colab Sec
 run(settings)                       # or: run(dry_run=False)
 ```
 
-`Settings` is a plain dataclass, so everything can also be given directly (`Settings(api_id=..., base_dir=..., max_upload_mb=500)`). `run()` works from scripts and notebooks; `await telegram_migration.run_async(settings)` is the coroutine version. Importing the package reads no environment variables and touches no files; credentials problems raise `telegram_migration.ConfigError`.
+`Settings` is a plain dataclass, so everything can also be given directly (`Settings(api_id=..., base_dir=..., max_upload_mb=500)`). `run()` works from scripts and notebooks; `await telegram_migration.run_async(settings)` is the coroutine version. Async runs scope settings to their task, so concurrent migrations do not overwrite each other's configuration. Importing the package reads no environment variables and touches no files; credentials problems raise `telegram_migration.ConfigError`.
+
+Telegram's per-message and caption limits default to 4096 and 1024 UTF-16 units. Set `text_limit` and `caption_limit` on `Settings` when the destination account supports different limits (for example, `caption_limit=2048` for Premium).
 
 ## Progress files and resuming
 

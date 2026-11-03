@@ -3,7 +3,7 @@
 Build a :class:`Settings` yourself, or call :meth:`Settings.from_env` to read the
 ``TELEGRAM_*`` environment variables (a local ``.env`` file and Google Colab Secrets are
 supported). The package modules read the *active* settings through ``config.settings``
-at call time, so :func:`use_settings` / :func:`set_settings` change them everywhere.
+at call time; :func:`use_settings` scopes them to the current thread/async context.
 
 Nothing is read from the environment at import time.
 """
@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import dataclasses
 import os
+from contextvars import ContextVar
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from typing import Mapping, Optional, Tuple, Union
@@ -108,6 +109,7 @@ class Settings:
     json_reaction_file_candidates: Tuple[str, ...] = ("result.json", "messages.json")
     max_json_fallback_mb: int = 512
     verify_replies: bool = True
+    text_limit: int = 4096                       # Telegram's per-message limit
     caption_limit: int = 1024                      # 2048 for Telegram Premium accounts
     # Try a native forward first when the export links the original message; a native
     # forward cannot carry our timestamp/sender line, so forward_annotate sends it as a reply.
@@ -211,28 +213,51 @@ def _number(raw: str, name: str, kind):
         raise ConfigError(f"{name} must be a number, got {raw!r}") from None
 
 
-# The settings the package modules read. Defaults only: nothing is read from the environment
-# until Settings.from_env() (or run()) is called.
-settings: Settings = Settings()
+# Defaults only: nothing is read from the environment until Settings.from_env() (or run()).
+_default_settings = Settings()
+_active_settings = ContextVar("telegram_migration_settings", default=None)
+
+
+class _SettingsProxy:
+    """Resolve settings in the current async context, falling back to defaults."""
+
+    def __getattr__(self, name):
+        return getattr(get_settings(), name)
+
+    def __setattr__(self, name, value):
+        setattr(get_settings(), name, value)
+
+    def __delattr__(self, name):
+        delattr(get_settings(), name)
+
+    def __repr__(self):
+        return repr(get_settings())
+
+
+settings = _SettingsProxy()
+
+
+def get_settings() -> Settings:
+    """Return the settings active in the current thread/async context."""
+    active = _active_settings.get()
+    return active if active is not None else _default_settings
 
 
 def set_settings(new: Settings) -> Settings:
-    """Make `new` the active settings for the whole package."""
-    global settings
-    settings = new
+    """Set fallback settings used outside a scoped `use_settings` context."""
+    global _default_settings
+    _default_settings = new
     return new
 
 
 @contextmanager
 def use_settings(new: Settings):
-    """Temporarily activate `new` (restored afterwards)."""
-    global settings
-    previous = settings
-    settings = new
+    """Temporarily activate `new` in this thread/async context only."""
+    token = _active_settings.set(new)
     try:
         yield new
     finally:
-        settings = previous
+        _active_settings.reset(token)
 
 
 def resolve_settings(settings_arg: Optional[Settings] = None, **overrides) -> Settings:

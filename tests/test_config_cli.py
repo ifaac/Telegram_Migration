@@ -1,4 +1,5 @@
 """Settings, environment loading and the command line. No network, no credentials."""
+import asyncio
 import contextlib
 import io
 import os
@@ -83,11 +84,25 @@ class SettingsTests(unittest.TestCase):
         self.assertIsInstance(Settings.from_env(GOOD_ENV).validate(), Settings)
 
     def test_use_settings_restores_the_previous_settings(self):
-        before = config.settings
+        before = config.get_settings()
         temporary = Settings(batch_limit=7)
         with config.use_settings(temporary):
-            self.assertIs(config.settings, temporary)
-        self.assertIs(config.settings, before)
+            self.assertIs(config.get_settings(), temporary)
+        self.assertIs(config.get_settings(), before)
+
+    def test_use_settings_is_isolated_between_async_tasks(self):
+        async def read_after_yield(settings):
+            with config.use_settings(settings):
+                await asyncio.sleep(0)
+                return config.get_settings().batch_limit
+
+        async def scenario():
+            return await asyncio.gather(
+                read_after_yield(Settings(batch_limit=3)),
+                read_after_yield(Settings(batch_limit=9)),
+            )
+
+        self.assertEqual(asyncio.run(scenario()), [3, 9])
 
     def test_resolve_settings_applies_overrides(self):
         base = Settings(batch_limit=1)

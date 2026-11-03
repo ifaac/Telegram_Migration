@@ -1,11 +1,10 @@
-"""On-disk progress: id map, partial-send state, deferred replies, failure log, export discovery."""
+"""On-disk migration state: ID map, partial sends, deferred replies and audit logs."""
 
 import json
 import os
 import re
 
 from . import config
-from .constants import HTML_FILE_PATTERN
 
 
 def load_id_map():
@@ -105,18 +104,6 @@ def log_failure(msg_id, reason):
         f.flush()
 
 
-def export_files():
-    if not os.path.isdir(config.settings.base_dir):
-        return []
-    pat = re.compile(HTML_FILE_PATTERN)
-    found = []
-    for name in os.listdir(config.settings.base_dir):
-        m = pat.match(name)
-        if m:
-            found.append((int(m.group(1) or 1), os.path.join(config.settings.base_dir, name)))
-    return [p for _, p in sorted(found)]
-
-
 def collect_source_ids(files):
     """One cheap regex pass over every HTML page: all real message ids.
 
@@ -173,7 +160,7 @@ def save_pending_replies(pending):
         return False
 
 
-def _append_jsonl(path, record):
+def append_jsonl(path, record):
     with open(path, "a", encoding="utf-8") as f:
         f.write(json.dumps(record, ensure_ascii=False, default=str) + "\n")
         f.flush()

@@ -44,7 +44,7 @@ def _quiet_pip_install(package, timeout=300):
         raise RuntimeError(detail[-1200:])
 
 
-def _enable_hachoir():
+def enable_hachoir():
     """Make sure Telethon can read duration/dimensions of videos, voice notes and round videos.
 
     Telethon uses hachoir for that, but only if it was importable when Telethon
@@ -160,7 +160,7 @@ def ensure_ffmpeg_tools():
     return False
 
 
-def _probe_video_metadata(path):
+def probe_video_metadata(path):
     """Return width, height and duration from ffprobe, or None if probing fails.
 
     FFmpeg setup is lazy: this helper is only called for video-sticker metadata,
@@ -198,7 +198,7 @@ def _probe_video_metadata(path):
         return None
 
 
-def _video_has_audio(path):
+def video_has_audio(path):
     """True / False when an already-installed ffprobe can tell, None when it cannot.
 
     Never installs anything: ordinary videos must not trigger an FFmpeg download.
