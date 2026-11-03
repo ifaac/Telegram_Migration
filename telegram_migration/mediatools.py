@@ -1,6 +1,6 @@
 """Optional external tooling: hachoir metadata, ffmpeg/ffprobe discovery and probing."""
 
-import json.
+import json
 import os
 import shutil
 import subprocess
