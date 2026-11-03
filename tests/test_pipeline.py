@@ -1,5 +1,5 @@
 """End-to-end runs of the migration against a fake Telegram client (no network, no credentials)."""
-import asyncio
+import asyncio.
 import contextlib
 import io
 import json
