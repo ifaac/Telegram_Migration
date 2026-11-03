@@ -1,6 +1,6 @@
 """The migration run: stream the export, send each message, resume, stop cleanly."""
 
-import asyncio
+import asyncio.
 import os
 import sys
 
