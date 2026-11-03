@@ -21,7 +21,7 @@ class PipelineTests(unittest.TestCase):
         self.addCleanup(self.folder.cleanup)
         FakeTelegram.instances.clear()
         for patcher in (patch.object(pipeline, "TelegramClient", FakeTelegram),
-                        patch.object(mediatools, "_enable_hachoir", return_value=True)):
+                        patch.object(mediatools, "enable_hachoir", return_value=True)):
             patcher.start()
             self.addCleanup(patcher.stop)
 
@@ -58,6 +58,37 @@ class PipelineTests(unittest.TestCase):
         self.assertIsNone(sent["parse_mode"])                    # our text is never re-parsed as markdown
         with config.use_settings(self.settings()):
             self.assertEqual(progress.load_id_map(), {"1": 1001})
+
+    def test_concurrent_runs_keep_settings_and_exports_isolated(self):
+        with tempfile.TemporaryDirectory() as first_dir, tempfile.TemporaryDirectory() as second_dir:
+            fakes.write_export(first_dir, [fakes.message(1, fakes.text("first run"))])
+            fakes.write_export(second_dir, [fakes.message(2, fakes.text("second run"))])
+            first = self.settings(base_dir=first_dir)
+            second = self.settings(base_dir=second_dir)
+
+            async def scenario():
+                await asyncio.gather(
+                    pipeline.run_async(first),
+                    pipeline.run_async(second),
+                )
+
+            with contextlib.redirect_stdout(io.StringIO()):
+                asyncio.run(scenario())
+
+        clients = FakeTelegram.instances[-2:]
+        self.assertCountEqual([client.texts() for client in clients], [
+            ["[2023-03-12 10:01]\nAlice:\nfirst run"],
+            ["[2023-03-12 10:02]\nAlice:\nsecond run"],
+        ])
+
+    def test_configured_text_limit_splits_reconstructed_messages(self):
+        fakes.write_export(self.folder.name, [
+            fakes.message(1, fakes.text("x" * 100)),
+        ])
+        client, _, _ = self.run_once(text_limit=40)
+        parts = client.texts()
+        self.assertGreater(len(parts), 1)
+        self.assertTrue(all(len(part) <= 40 for part in parts))
 
     def test_second_run_resumes_and_does_not_repeat_messages(self):
         fakes.write_export(self.folder.name, [fakes.message(1, fakes.text("one")), fakes.message(2, fakes.text("two"))])

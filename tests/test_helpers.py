@@ -136,7 +136,7 @@ class ExportParsingTests(unittest.TestCase):
           </div>
         </div>'''
         elem = etree.fromstring(html)
-        with patch.object(config.settings, "base_dir", tempfile.gettempdir()):
+        with patch.object(config.get_settings(), "base_dir", tempfile.gettempdir()):
             data = htmlexport.extract_message_data(elem)
         self.assertEqual(data["msg_id"], "123")
         self.assertEqual(data["sender"], "Alice")
@@ -166,8 +166,8 @@ class ExportParsingTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             for name in ("messages10.html", "messages2.html", "messages.html", "not-messages.html"):
                 (Path(temp) / name).write_text("", encoding="utf-8")
-            with patch.object(config.settings, "base_dir", temp):
-                names = [Path(p).name for p in progress.export_files()]
+            with patch.object(config.get_settings(), "base_dir", temp):
+                names = [Path(p).name for p in htmlexport.discover_export_files(temp)]
             self.assertEqual(names, ["messages.html", "messages2.html", "messages10.html"])
 
 
@@ -203,7 +203,7 @@ class MediaTests(unittest.TestCase):
                 '<a href="photos/photo.jpg"><img class="photo" src="photos/photo_thumb.jpg"/></a>'
                 '</div></div>'
             )
-            with patch.object(config.settings, "base_dir", temp):
+            with patch.object(config.get_settings(), "base_dir", temp):
                 media = exportmedia.find_media(elem)
             self.assertEqual(len(media), 1)
             self.assertEqual(
@@ -213,13 +213,13 @@ class MediaTests(unittest.TestCase):
             self.assertEqual(media[0][1], "photo")
 
     def test_album_compatibility_only_allows_supported_media_groups(self):
-        self.assertTrue(exportmedia._album_compatible([("a", "photo"), ("b", "video")]))
-        self.assertTrue(exportmedia._album_compatible([("a", "document"), ("b", "document")]))
-        self.assertFalse(exportmedia._album_compatible([("a", "photo"), ("b", "document")]))
-        self.assertFalse(exportmedia._album_compatible([("a", "sticker_static"), ("b", "photo")]))
+        self.assertTrue(exportmedia.album_compatible([("a", "photo"), ("b", "video")]))
+        self.assertTrue(exportmedia.album_compatible([("a", "document"), ("b", "document")]))
+        self.assertFalse(exportmedia.album_compatible([("a", "photo"), ("b", "document")]))
+        self.assertFalse(exportmedia.album_compatible([("a", "sticker_static"), ("b", "photo")]))
 
     def test_upload_size_guard_only_flags_files_strictly_over_limit(self):
-        with patch.object(config.settings, "max_upload_mb", 1):
+        with patch.object(config.get_settings(), "max_upload_mb", 1):
             with patch.object(os.path, "getsize", side_effect=lambda path: {
                 "exact": 1024 * 1024,
                 "over": 1024 * 1024 + 1,
@@ -236,7 +236,7 @@ class MediaTests(unittest.TestCase):
         self.assertIsInstance(options["attributes"][0], tl.DocumentAttributeSticker)
 
     def test_video_sticker_metadata_is_used_when_available(self):
-        with patch.object(mediatools, "_probe_video_metadata", return_value={"width": 256, "height": 128, "duration": 2.5}):
+        with patch.object(mediatools, "probe_video_metadata", return_value={"width": 256, "height": 128, "duration": 2.5}):
             options = uploads._sticker_upload_options("sticker.webm", "sticker_video")
         self.assertEqual(options["mime_type"], "video/webm")
         self.assertTrue(options["nosound_video"])
@@ -248,7 +248,7 @@ class StateAndAuditTests(unittest.TestCase):
     def test_id_map_round_trip(self):
         with tempfile.TemporaryDirectory() as temp:
             path = str(Path(temp) / "id-map.jsonl")
-            with patch.object(config.settings, "idmap_file", path):
+            with patch.object(config.get_settings(), "idmap_file", path):
                 progress.append_id_map("10", 501)
                 progress.append_id_map("11", 502)
                 self.assertEqual(progress.load_id_map(), {"10": 501, "11": 502})
@@ -256,7 +256,7 @@ class StateAndAuditTests(unittest.TestCase):
     def test_partial_send_state_round_trip_and_merges_latest_snapshot(self):
         with tempfile.TemporaryDirectory() as temp:
             path = str(Path(temp) / "partial.jsonl")
-            with patch.object(config.settings, "partial_file", path):
+            with patch.object(config.get_settings(), "partial_file", path):
                 progress.save_state("10", {"src": "10", "text_prog": {"done": 1, "first": 90, "last": 90}})
                 progress.save_state("10", {"src": "10", "text_prog": {"done": 2, "first": 90, "last": 91}, "media_id": 92})
                 state = progress.load_partial()["10"]
@@ -268,7 +268,7 @@ class StateAndAuditTests(unittest.TestCase):
     def test_pending_reply_file_round_trip(self):
         with tempfile.TemporaryDirectory() as temp:
             path = str(Path(temp) / "pending.json")
-            with patch.object(config.settings, "pending_replies_file", path):
+            with patch.object(config.get_settings(), "pending_replies_file", path):
                 self.assertTrue(progress.save_pending_replies({"20": "19", "21": "18"}))
                 self.assertEqual(progress.load_pending_replies(), {"20": "19", "21": "18"})
                 self.assertFalse(Path(path + ".tmp").exists())
@@ -276,7 +276,7 @@ class StateAndAuditTests(unittest.TestCase):
     def test_manual_upload_ledger_reads_mapping_and_marks_once(self):
         with tempfile.TemporaryDirectory() as temp:
             path = str(Path(temp) / "manual.txt")
-            with patch.object(config.settings, "manual_uploads_file", path):
+            with patch.object(config.get_settings(), "manual_uploads_file", path):
                 Path(path).write_text("# comment\n123 456 # user uploaded\n", encoding="utf-8")
                 done, mapped = bigfiles.load_manual_uploads()
                 self.assertEqual(done, {"123"})
@@ -289,7 +289,7 @@ class StateAndAuditTests(unittest.TestCase):
     def test_failure_log_flattens_embedded_newlines(self):
         with tempfile.TemporaryDirectory() as temp:
             path = str(Path(temp) / "failed.txt")
-            with patch.object(config.settings, "failed_file", path):
+            with patch.object(config.get_settings(), "failed_file", path):
                 progress.log_failure("55", "bad\nmessage\twith whitespace")
             self.assertEqual(Path(path).read_text(encoding="utf-8"), "55\tbad message with whitespace\n")
 
@@ -323,7 +323,7 @@ class ReactionMetadataTests(unittest.TestCase):
                 ],
             }
             (Path(temp) / "result.json").write_text(json.dumps(payload), encoding="utf-8")
-            with patch.object(config.settings, "base_dir", temp):
+            with patch.object(config.get_settings(), "base_dir", temp):
                 reactions = reaction_archive.load_json_reactions([], {"10"})
             self.assertIn("10", reactions)
             self.assertNotIn("20", reactions)
@@ -346,7 +346,7 @@ class AsyncSendTests(unittest.TestCase):
                     return SimpleNamespace(id=100 + len(calls))
                 client = SimpleNamespace(send_message=send_message)
                 state = {"src": "123"}
-                with patch.object(config.settings, "partial_file", str(Path(temp) / "partial.jsonl")):
+                with patch.object(config.get_settings(), "partial_file", str(Path(temp) / "partial.jsonl")):
                     result = await sending._send_text_chunks(
                         client, "channel", [("first", []), ("second", [])],
                         None, state, "text_prog", persist=True,
@@ -384,7 +384,7 @@ class AsyncSendTests(unittest.TestCase):
                 return SimpleNamespace(id=777)
             client = SimpleNamespace(send_file=send_file)
             uploads._UNSUPPORTED_SEND_KWARGS.clear()
-            result = await uploads._send_media_item(
+            result = await uploads.send_media_item(
                 client, "channel", "files/scan.png", "document", None,
                 caption="a *literal* caption", entities=None,
             )
@@ -404,7 +404,7 @@ class AsyncSendTests(unittest.TestCase):
                 return SimpleNamespace(id=778)
             client = SimpleNamespace(send_file=send_file)
             uploads._UNSUPPORTED_SEND_KWARGS.clear()
-            await uploads._send_media_item(client, "channel", "animations/a.gif", "gif", None)
+            await uploads.send_media_item(client, "channel", "animations/a.gif", "gif", None)
             kwargs = calls[0]
             self.assertTrue(kwargs["force_document"])
             self.assertEqual(kwargs["mime_type"], "image/gif")
@@ -420,7 +420,7 @@ class AsyncSendTests(unittest.TestCase):
                     return [SimpleNamespace(id=501), SimpleNamespace(id=502)]
                 client = SimpleNamespace(send_file=send_file)
                 state = {"src": "77"}
-                with patch.object(config.settings, "partial_file", str(Path(temp) / "partial.jsonl")):
+                with patch.object(config.get_settings(), "partial_file", str(Path(temp) / "partial.jsonl")):
                     result = await sending._do_send(
                         client, "channel", [("caption", [])],
                         [("photos/a.jpg", "photo"), ("photos/b.jpg", "photo")],
@@ -447,8 +447,8 @@ class AsyncSendTests(unittest.TestCase):
                 return SimpleNamespace(id=779)
             client = SimpleNamespace(send_file=send_file)
             uploads._UNSUPPORTED_SEND_KWARGS.clear()
-            with patch.object(mediatools, "_video_has_audio", return_value=None):
-                await uploads._send_media_item(client, "channel", "video_files/clip.mp4", "video", None)
+            with patch.object(mediatools, "video_has_audio", return_value=None):
+                await uploads.send_media_item(client, "channel", "video_files/clip.mp4", "video", None)
             self.assertNotIn("nosound_video", calls[0])
         asyncio.run(scenario())
 
@@ -462,7 +462,7 @@ class AsyncSendTests(unittest.TestCase):
                 return "sent"
             client = SimpleNamespace(send_file=send_file)
             uploads._UNSUPPORTED_SEND_KWARGS.clear()
-            result = await uploads._send_file(client, "channel", "file.webp", mime_type="image/webp", caption="x")
+            result = await uploads.send_file(client, "channel", "file.webp", mime_type="image/webp", caption="x")
             self.assertEqual(result, "sent")
             self.assertEqual(len(calls), 2)
             self.assertIn("mime_type", calls[0])
@@ -481,8 +481,8 @@ class AsyncSendTests(unittest.TestCase):
             class EntityBoundsError(Exception):
                 pass
             with tempfile.TemporaryDirectory() as temp:
-                with patch.object(config.settings, "format_debug_file", str(Path(temp) / "format.jsonl")):
-                    result = await formatfallback._with_formatting_fallback(
+                with patch.object(config.get_settings(), "format_debug_file", str(Path(temp) / "format.jsonl")):
+                    result = await formatfallback.with_formatting_fallback(
                         send, {"formatting_entities": [tl.MessageEntityItalic(offset=0, length=1)]},
                         "x", [tl.MessageEntityItalic(offset=0, length=1)], "1",
                     )

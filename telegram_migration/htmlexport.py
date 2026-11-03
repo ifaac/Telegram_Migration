@@ -1,5 +1,6 @@
 """Read one message out of a Telegram Desktop HTML export."""
 
+import os
 import re
 from datetime import datetime
 from urllib.parse import parse_qs
@@ -8,9 +9,23 @@ from urllib.parse import urlparse
 from . import config, exportmedia
 from .htmlutil import css_classes, find_first, inner_text, text_without
 from .richtext import parse_rich_text
+from .constants import HTML_FILE_PATTERN
 
 
 _DATE_SUFFIX = re.compile(r"\s*UTC[+-]\d{2}:\d{2}\s*$|\s*UTC\s*$")
+
+
+def discover_export_files(base_dir):
+    """Return Telegram Desktop HTML export pages in message order."""
+    if not os.path.isdir(base_dir):
+        return []
+    pattern = re.compile(HTML_FILE_PATTERN)
+    found = []
+    for name in os.listdir(base_dir):
+        match = pattern.match(name)
+        if match:
+            found.append((int(match.group(1) or 1), os.path.join(base_dir, name)))
+    return [path for _, path in sorted(found)]
 
 
 def parse_export_date(s):

@@ -32,7 +32,7 @@ def _sticker_upload_options(path, kind):
         options["mime_type"] = "application/x-tgsticker"
     elif kind == "sticker_video" or ext == ".webm":
         options["mime_type"] = "video/webm"
-        metadata = mediatools._probe_video_metadata(path) or {}
+        metadata = mediatools.probe_video_metadata(path) or {}
         width = int(metadata.get("width") or 512)
         height = int(metadata.get("height") or 512)
         duration = float(metadata.get("duration") or 1.0)
@@ -84,7 +84,7 @@ def configure_send_file_compat():
     """Look at the installed send_file() signature and note options it lacks. Never aborts.
 
     If the signature takes **kwargs (or cannot be read) nothing is assumed and the
-    per-call TypeError fallback in _send_file() does the work.
+    per-call TypeError fallback in send_file() does the work.
     """
     try:
         params = inspect.signature(TelegramClient.send_file).parameters
@@ -100,7 +100,7 @@ def configure_send_file_compat():
               + ". Those options will be skipped (upgrade Telethon for best GIF/sticker fidelity).")
 
 
-async def _send_file(client, channel, files, **kwargs):
+async def send_file(client, channel, files, **kwargs):
     """client.send_file() that tolerates optional keywords an older Telethon rejects."""
     for key in list(kwargs):
         if key in _UNSUPPORTED_SEND_KWARGS:
@@ -119,7 +119,7 @@ async def _send_file(client, channel, files, **kwargs):
             raise
 
 
-async def _send_media_item(client, channel, path, kind, reply_to,
+async def send_media_item(client, channel, path, kind, reply_to, source_id=None,
                            caption="", entities=None):
     """Send one media item with format-specific GIF/sticker handling."""
     caption = caption or ""
@@ -152,7 +152,7 @@ async def _send_media_item(client, channel, path, kind, reply_to,
         # Only a video that really has no audio track needs the "this is a video,
         # not a GIF" flag. Videos with sound (or when ffprobe cannot tell) are
         # sent without it, so no file is mislabelled as silent.
-        if mediatools._video_has_audio(path) is False:
+        if mediatools.video_has_audio(path) is False:
             kwargs["nosound_video"] = True
     elif kind == "voice":
         kwargs["voice_note"] = True
@@ -164,8 +164,8 @@ async def _send_media_item(client, channel, path, kind, reply_to,
         # document/file presentation rather than uploading a compressed photo.
         kwargs["force_document"] = True
 
-    sent = await formatfallback._with_formatting_fallback(
-        lambda **kw: _send_file(client, channel, path, **kw),
-        kwargs, caption, entities, formatfallback._current_src[0],
+    sent = await formatfallback.with_formatting_fallback(
+        lambda **kw: send_file(client, channel, path, **kw),
+        kwargs, caption, entities, source_id,
     )
     return sent[0] if isinstance(sent, (list, tuple)) else sent

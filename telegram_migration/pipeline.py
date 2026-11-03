@@ -7,223 +7,216 @@ import sys
 from lxml import etree
 from telethon import TelegramClient
 
-from . import bigfiles, config, formatfallback, htmlexport, mediatools, progress, reaction_archive, replylinks, sending, uploads
+from . import bigfiles, cli, config, htmlexport, mediatools, progress, reaction_archive, replylinks, sending, uploads
 from .htmlutil import css_classes
 from .textutil import compose_message, split_with_entities, strip_with_entities
-from .constants import NO_CAPTION_KINDS, STICKER_KINDS, TEXT_LIMIT
-
-
-async def confirm_target(channel, pending, n_files):
-    print()
-    print("═" * 60)
-    print(f"  Target:  {getattr(channel, 'title', '?')!r}")
-    print(f"  ID:      {getattr(channel, 'id', '?')}")
-    uname = getattr(channel, "username", None)
-    if uname:
-        print(f"  Handle:  @{uname}")
-    print(f"  Files:   {n_files} export file(s)")
-    print(f"  Pending: ~{pending} messages")
-    print("═" * 60)
-    if config.settings.dry_run:
-        print("DRY RUN — nothing will actually be sent.\n")
-        return True
-    if config.settings.skip_confirmation:
-        print("SKIP_CONFIRMATION is on — proceeding.\n")
-        return True
-    return input("Send to this channel? [y/N]: ").strip().lower() in ("y", "yes")
+from .constants import NO_CAPTION_KINDS, STICKER_KINDS
 
 
 async def process_file(client, channel, path, id_map, partial, pending_replies, stats, ctx,
                       only_pending=False):
     print(("Retrying deferred replies in " if only_pending else "Streaming ") + os.path.basename(path) + " ...")
-    context = etree.iterparse(path, events=("end",), tag="div", html=True, encoding="utf-8")
-
-    for _event, elem in context:
-        if "message" not in css_classes(elem):
-            continue
-
-        data = None
-        source_id = None
-        mark_completed = False
-        try:
-            raw_elem_id = elem.get("id", "")
-            if raw_elem_id.startswith("message") and raw_elem_id[7:].isdigit():
-                source_id = raw_elem_id[7:]
-            data = htmlexport.extract_message_data(elem)
-            if data is None:
-                mark_completed = bool(source_id)
-                continue
-            source_id = str(data["msg_id"])
-            formatfallback._current_src[0] = source_id
-
-            if data["sender"]:
-                ctx["last_sender"] = data["sender"]
-            elif data["joined"] and config.settings.preserve_sender_names:
-                data["sender"] = ctx["last_sender"]
-
-            # Metadata gathered during this pass (no separate full parse at startup):
-            # reply targets for the audit, and HTML reaction data to supplement JSON.
-            if data["reply_src_id"]:
-                ctx["reply_map"][source_id] = str(data["reply_src_id"])
-            if data.get("reactions") and source_id not in ctx["reaction_map"]:
-                ctx["reaction_map"][source_id] = data["reactions"]
-
-            if only_pending and source_id not in pending_replies:
-                continue
-
-            if source_id in id_map:
-                was_pending = source_id in pending_replies
-                pending_replies.pop(source_id, None)
-                if was_pending and not config.settings.dry_run:
-                    progress.save_pending_replies(pending_replies)
-                mark_completed = True
-                continue
-
-            if source_id in ctx["manual_done"]:
-                # Uploaded by hand after an oversize stop: never sent by the script.
-                was_pending = source_id in pending_replies
-                pending_replies.pop(source_id, None)
-                if was_pending and not config.settings.dry_run:
-                    progress.save_pending_replies(pending_replies)
-                mark_completed = True
-                continue
-
-            if stats["sent"] + stats["failed"] >= config.settings.batch_limit:
-                print(f"Batch limit reached ({config.settings.batch_limit}). Restart to continue.")
-                ctx["stop"] = True
-                break
-
-            has_content = bool(data["body_text"].strip() or data["media"])
-            if not has_content:
-                stats["skipped"] += 1
-                was_pending = source_id in pending_replies
-                pending_replies.pop(source_id, None)
-                if was_pending and not config.settings.dry_run:
-                    progress.save_pending_replies(pending_replies)
-                mark_completed = True
-                continue
-
-            ts = data["timestamp"]
-            watermark = (f"[{ts.strftime('%Y-%m-%d %H:%M')}]\n", []) if ts else ("", [])
-            sender = (f"{data['sender']}:\n", []) if data["sender"] else ("", [])
-            forward = (data["forward_header"], [])
-
-            reply_to = id_map.get(str(data["reply_src_id"])) if data["reply_src_id"] else None
-            reply_fallback = ("", [])
-            if data["reply_src_id"] and reply_to is None:
-                target_src = str(data["reply_src_id"])
-                target_is_in_export = target_src in ctx["source_ids"]
-                target_already_processed = target_src in ctx["processed_source_ids"]
-                if target_is_in_export and not target_already_processed:
-                    # Target appears later in the export, or has not yet been
-                    # migrated in this run. Persist this message for a second pass.
-                    if not config.settings.dry_run:
-                        if pending_replies.get(source_id) != target_src:
-                            pending_replies[source_id] = target_src
-                            progress.save_pending_replies(pending_replies)
-                    else:
-                        print(f"  [dry] would defer reply id={source_id} until target id={target_src} is migrated")
-                    continue
-                # A target absent from the export or already processed but unmapped
-                # cannot become a native reply. Preserve the exported quote/context.
-                preview = data.get("reply_preview", "")
-                fallback = f"[Original reply target #{target_src} is unavailable in the destination]\n"
-                if preview:
-                    fallback += f"Original reply preview: {preview}\n"
-                fallback += "\n"
-                reply_fallback = (fallback, [])
-
-            text, entities = compose_message(
-                watermark, sender, forward, data["body_text"], data["body_entities"],
-                extra_before_body=reply_fallback,
-            )
-            text, entities = strip_with_entities(text, entities)
-
-            # Size preflight: nothing from this message is uploaded if any file is too big.
-            oversize = bigfiles.find_oversize_media(data["media"])
-            if oversize:
-                if config.settings.dry_run:
-                    bigfiles.print_oversize_dry_run(source_id, data, oversize)
-                    ctx["oversize_report"].append(source_id)
-                    mark_completed = True
-                    continue
-                bigfiles.halt_for_oversize(source_id, data, text, oversize, id_map, ctx)
-                break
-
-            ann_text, ann_ents = compose_message(watermark, sender, ("", []), "", [])
-            ann_text, ann_ents = strip_with_entities(ann_text, ann_ents)
-            annotation = [(ann_text, ann_ents)] if ann_text.strip() else None
-
-            kinds_list = [k for _, k in data["media"]]
-            captionable = bool(kinds_list) and kinds_list[0] not in NO_CAPTION_KINDS
-            has_sticker = any(k in STICKER_KINDS for k in kinds_list)
-            first_limit = TEXT_LIMIT if has_sticker else (
-                config.settings.caption_limit if (captionable or len(kinds_list) > 1) else TEXT_LIMIT
-            )
-            kinds = ",".join(kinds_list) or "text"
-            when = ts.strftime("%Y-%m-%d %H:%M") if ts else "?"
-
-            if config.settings.dry_run:
-                chunks = split_with_entities(text, entities, first_limit, TEXT_LIMIT)
-                flag = "↪" if reply_to else ("?" if data["reply_src_id"] else " ")
-                fwd = "F" if data["forward_source"] else " "
-                preview = text[:80].replace("\n", "⏎")
-                extra = f" +{len(chunks) - 1} part(s)" if len(chunks) > 1 else ""
-                print(f"  [dry] {flag}{fwd} id={source_id:<6} ({kinds:<15}) {preview!r}{extra}")
-                stats["sent"] += 1
-                pending_replies.pop(source_id, None)
-                mark_completed = True
-                continue
-
-            entities = await sending.resolve_mentions(client, entities)
-            chunks = split_with_entities(text, entities, first_limit, TEXT_LIMIT)
-
-            state = {"src": source_id, "force_reconstruction": bool(data["reply_src_id"])}
-            if source_id in partial:
-                state.update(partial[source_id])
-
-            new_id = await sending.send_one(client, channel, data, chunks, reply_to, state, annotation)
-
-            if new_id:
-                id_map[source_id] = int(new_id)
-                ctx["last_dest_id"] = int(new_id)
-                progress.append_id_map(source_id, new_id)
-                stats["sent"] += 1
-                if state.get("native"):
-                    stats["forwarded"] += 1
-                was_pending = source_id in pending_replies
-                pending_replies.pop(source_id, None)
-                if was_pending:
-                    progress.save_pending_replies(pending_replies)
-                print(f"  [{stats['sent']:>4}] id={source_id:<6} → {new_id:<7}  ({kinds})  {when}")
-            else:
-                stats["failed"] += 1
-                mark_completed = True
-                if data["reply_src_id"]:
-                    ctx["audit"].append({
-                        "src": source_id,
-                        "source_reply_to": str(data["reply_src_id"]),
-                        "verified": False,
-                        "status": "send_failed",
-                    })
-
-            mark_completed = True
-            await asyncio.sleep(config.settings.send_delay_seconds)
-
-        except Exception as exc:
-            mid = ("message" + source_id) if source_id else elem.get("id", "?")
-            print(f"    failed {mid}: {type(exc).__name__}: {exc}")
-            progress.log_failure(mid, f"{type(exc).__name__}: {exc}")
-            stats["failed"] += 1
-            mark_completed = True
-        finally:
-            if source_id and mark_completed:
-                ctx["processed_source_ids"].add(source_id)
-            elem.clear()
-            while elem.getprevious() is not None:
-                del elem.getparent()[0]
-
+    with open(path, "rb") as export_file:
+        context = etree.iterparse(export_file, events=("end",), tag="div", html=True, encoding="utf-8")
+        for _event, elem in context:
+            if "message" in css_classes(elem):
+                await _process_message(
+                    elem, client, channel, id_map, partial, pending_replies, stats, ctx,
+                    only_pending,
+                )
+                if ctx["stop"]:
+                    break
     return ctx["stop"]
+
+
+def _resolve_reply(data, source_id, id_map, pending_replies, ctx):
+    reply_to = id_map.get(str(data["reply_src_id"])) if data["reply_src_id"] else None
+    reply_fallback = ("", [])
+    if not data["reply_src_id"] or reply_to is not None:
+        return reply_to, reply_fallback, False
+
+    target_src = str(data["reply_src_id"])
+    if target_src in ctx["source_ids"] and target_src not in ctx["processed_source_ids"]:
+        if not config.settings.dry_run:
+            if pending_replies.get(source_id) != target_src:
+                pending_replies[source_id] = target_src
+                progress.save_pending_replies(pending_replies)
+        else:
+            print(f"  [dry] would defer reply id={source_id} until target id={target_src} is migrated")
+        return None, reply_fallback, True
+
+    fallback = f"[Original reply target #{target_src} is unavailable in the destination]\n"
+    if data.get("reply_preview"):
+        fallback += f"Original reply preview: {data['reply_preview']}\n"
+    return None, (fallback + "\n", []), False
+
+
+def _print_dry_run(source_id, data, text, entities, first_limit, reply_to,
+                   kind_summary, stats, pending_replies):
+    chunks = split_with_entities(text, entities, first_limit, config.settings.text_limit)
+    flag = "↪" if reply_to else ("?" if data["reply_src_id"] else " ")
+    fwd = "F" if data["forward_source"] else " "
+    preview = text[:80].replace("\n", "⏎")
+    extra = f" +{len(chunks) - 1} part(s)" if len(chunks) > 1 else ""
+    print(f"  [dry] {flag}{fwd} id={source_id:<6} ({kind_summary:<15}) {preview!r}{extra}")
+    stats["sent"] += 1
+    pending_replies.pop(source_id, None)
+
+
+async def _send_migrated_message(client, channel, data, source_id, text, entities,
+                                 first_limit, reply_to, annotation, partial,
+                                 pending_replies, id_map, stats, ctx, kind_summary, when):
+    entities = await sending.resolve_mentions(client, entities)
+    chunks = split_with_entities(text, entities, first_limit, config.settings.text_limit)
+    state = {"src": source_id, "force_reconstruction": bool(data["reply_src_id"])}
+    if source_id in partial:
+        state.update(partial[source_id])
+
+    new_id = await sending.send_one(
+        client, channel, data, chunks, reply_to, state, annotation, source_id
+    )
+    if new_id:
+        id_map[source_id] = int(new_id)
+        ctx["last_dest_id"] = int(new_id)
+        progress.append_id_map(source_id, new_id)
+        stats["sent"] += 1
+        if state.get("native"):
+            stats["forwarded"] += 1
+        was_pending = source_id in pending_replies
+        pending_replies.pop(source_id, None)
+        if was_pending:
+            progress.save_pending_replies(pending_replies)
+        print(f"  [{stats['sent']:>4}] id={source_id:<6} → {new_id:<7}  ({kind_summary})  {when}")
+        return
+
+    stats["failed"] += 1
+    if data["reply_src_id"]:
+        ctx["audit"].append({
+            "src": source_id,
+            "source_reply_to": str(data["reply_src_id"]),
+            "verified": False,
+            "status": "send_failed",
+        })
+
+
+async def _process_message(elem, client, channel, id_map, partial, pending_replies,
+                           stats, ctx, only_pending):
+    source_id = None
+    mark_completed = False
+    try:
+        raw_elem_id = elem.get("id", "")
+        if raw_elem_id.startswith("message") and raw_elem_id[7:].isdigit():
+            source_id = raw_elem_id[7:]
+        data = htmlexport.extract_message_data(elem)
+        if data is None:
+            mark_completed = bool(source_id)
+            return
+        source_id = str(data["msg_id"])
+
+        if data["sender"]:
+            ctx["last_sender"] = data["sender"]
+        elif data["joined"] and config.settings.preserve_sender_names:
+            data["sender"] = ctx["last_sender"]
+
+        if data["reply_src_id"]:
+            ctx["reply_map"][source_id] = str(data["reply_src_id"])
+        if data.get("reactions") and source_id not in ctx["reaction_map"]:
+            ctx["reaction_map"][source_id] = data["reactions"]
+
+        if only_pending and source_id not in pending_replies:
+            return
+
+        if source_id in id_map or source_id in ctx["manual_done"]:
+            was_pending = source_id in pending_replies
+            pending_replies.pop(source_id, None)
+            if was_pending and not config.settings.dry_run:
+                progress.save_pending_replies(pending_replies)
+            mark_completed = True
+            return
+
+        if stats["sent"] + stats["failed"] >= config.settings.batch_limit:
+            print(f"Batch limit reached ({config.settings.batch_limit}). Restart to continue.")
+            ctx["stop"] = True
+            return
+
+        has_content = bool(data["body_text"].strip() or data["media"])
+        if not has_content:
+            stats["skipped"] += 1
+            was_pending = source_id in pending_replies
+            pending_replies.pop(source_id, None)
+            if was_pending and not config.settings.dry_run:
+                progress.save_pending_replies(pending_replies)
+            mark_completed = True
+            return
+
+        timestamp = data["timestamp"]
+        watermark = (f"[{timestamp.strftime('%Y-%m-%d %H:%M')}]\n", []) if timestamp else ("", [])
+        sender = (f"{data['sender']}:\n", []) if data["sender"] else ("", [])
+        forward = (data["forward_header"], [])
+
+        reply_to, reply_fallback, deferred = _resolve_reply(
+            data, source_id, id_map, pending_replies, ctx
+        )
+        if deferred:
+            return
+
+        text, entities = compose_message(
+            watermark, sender, forward, data["body_text"], data["body_entities"],
+            extra_before_body=reply_fallback,
+        )
+        text, entities = strip_with_entities(text, entities)
+
+        oversize = bigfiles.find_oversize_media(data["media"])
+        if oversize:
+            if config.settings.dry_run:
+                bigfiles.print_oversize_dry_run(source_id, data, oversize)
+                ctx["oversize_report"].append(source_id)
+                mark_completed = True
+                return
+            bigfiles.halt_for_oversize(source_id, data, text, oversize, id_map, ctx)
+            return
+
+        annotation_text, annotation_entities = compose_message(watermark, sender, ("", []), "", [])
+        annotation_text, annotation_entities = strip_with_entities(annotation_text, annotation_entities)
+        annotation = [(annotation_text, annotation_entities)] if annotation_text.strip() else None
+
+        kinds = [kind for _path, kind in data["media"]]
+        captionable = bool(kinds) and kinds[0] not in NO_CAPTION_KINDS
+        has_sticker = any(kind in STICKER_KINDS for kind in kinds)
+        first_limit = config.settings.text_limit if has_sticker else (
+            config.settings.caption_limit if (captionable or len(kinds) > 1)
+            else config.settings.text_limit
+        )
+        kind_summary = ",".join(kinds) or "text"
+        when = timestamp.strftime("%Y-%m-%d %H:%M") if timestamp else "?"
+
+        if config.settings.dry_run:
+            _print_dry_run(
+                source_id, data, text, entities, first_limit, reply_to,
+                kind_summary, stats, pending_replies,
+            )
+            mark_completed = True
+            return
+
+        await _send_migrated_message(
+            client, channel, data, source_id, text, entities, first_limit,
+            reply_to, annotation, partial, pending_replies, id_map, stats,
+            ctx, kind_summary, when,
+        )
+        mark_completed = True
+        await asyncio.sleep(config.settings.send_delay_seconds)
+    except Exception as exc:
+        mid = ("message" + source_id) if source_id else elem.get("id", "?")
+        print(f"    failed {mid}: {type(exc).__name__}: {exc}")
+        progress.log_failure(mid, f"{type(exc).__name__}: {exc}")
+        stats["failed"] += 1
+        mark_completed = True
+    finally:
+        if source_id and mark_completed:
+            ctx["processed_source_ids"].add(source_id)
+        elem.clear()
+        while elem.getprevious() is not None:
+            del elem.getparent()[0]
 
 
 async def run_async(settings=None, **overrides):
@@ -231,14 +224,18 @@ async def run_async(settings=None, **overrides):
 
     `settings` is a :class:`~telegram_migration.config.Settings`; when omitted it is read
     from the environment (``Settings.from_env()``). Keyword arguments override single
-    settings, e.g. ``run_async(dry_run=False)``. The settings become the active ones for
-    the whole package. Raises :class:`~telegram_migration.config.ConfigError` when the
+    settings, e.g. ``run_async(dry_run=False)``. Settings are scoped to this async task,
+    so concurrent runs remain isolated. Raises :class:`~telegram_migration.config.ConfigError` when the
     credentials or the destination are missing.
     """
-    config.set_settings(config.resolve_settings(settings, **overrides)).validate()
+    resolved = config.resolve_settings(settings, **overrides).validate()
+    with config.use_settings(resolved):
+        return await _run_migration()
 
+
+async def _run_migration():
     uploads.configure_send_file_compat()
-    mediatools._enable_hachoir()
+    mediatools.enable_hachoir()
 
     drive_root = os.path.abspath("/content/drive")
     configured_dir = os.path.abspath(config.settings.base_dir)
@@ -249,7 +246,7 @@ async def run_async(settings=None, **overrides):
 
     # FFmpeg/ffprobe are installed lazily only if a .webm video sticker needs
     # dimensions/duration and no usable ffprobe is already available.
-    files = progress.export_files()
+    files = htmlexport.discover_export_files(config.settings.base_dir)
     if not files:
         print(f"No messages.html / messages2.html ... found in: {config.settings.base_dir}")
         return
@@ -284,7 +281,8 @@ async def run_async(settings=None, **overrides):
         await client.disconnect()
         return
 
-    if not await confirm_target(channel, max(0, total - len(set(id_map) | manual_done)), len(files)):
+    if not cli.confirm_target(
+            channel, max(0, total - len(set(id_map) | manual_done)), len(files), config.get_settings()):
         print("Aborted by user.")
         await client.disconnect()
         return
@@ -350,7 +348,7 @@ async def run_async(settings=None, **overrides):
 
     if config.settings.dry_run and ctx["oversize_report"]:
         print()
-        print(f"{len(ctx['oversize_report'])} message(s) have files over {bigfiles._mb(bigfiles._max_upload_bytes())} "
+        print(f"{len(ctx['oversize_report'])} message(s) have files over {bigfiles.format_mb(bigfiles.max_upload_bytes())} "
               f"(ids: {', '.join(ctx['oversize_report'])}). A real run stops at the first one.")
 
     print()

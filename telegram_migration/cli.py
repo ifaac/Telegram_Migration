@@ -5,6 +5,26 @@ import sys
 from ._version import __version__
 
 
+def confirm_target(channel, pending, n_files, settings):
+    print()
+    print("═" * 60)
+    print(f"  Target:  {getattr(channel, 'title', '?')!r}")
+    print(f"  ID:      {getattr(channel, 'id', '?')}")
+    uname = getattr(channel, "username", None)
+    if uname:
+        print(f"  Handle:  @{uname}")
+    print(f"  Files:   {n_files} export file(s)")
+    print(f"  Pending: ~{pending} messages")
+    print("═" * 60)
+    if settings.dry_run:
+        print("DRY RUN — nothing will actually be sent.\n")
+        return True
+    if settings.skip_confirmation:
+        print("SKIP_CONFIRMATION is on — proceeding.\n")
+        return True
+    return input("Send to this channel? [y/N]: ").strip().lower() in ("y", "yes")
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="telegram-migration",

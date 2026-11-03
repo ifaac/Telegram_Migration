@@ -131,7 +131,7 @@ def media_note(msg_div):
     return "[" + (note[:500] + "..." if len(note) > 500 else note) + "]"
 
 
-def _album_compatible(media):
+def album_compatible(media):
     """Telegram albums hold photos/videos together, or documents together. Nothing else."""
     kinds = {kind for _path, kind in media}
     if kinds <= {"photo", "video"}:

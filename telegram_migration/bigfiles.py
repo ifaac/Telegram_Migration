@@ -7,18 +7,18 @@ from datetime import datetime
 from . import config, progress
 
 
-def _max_upload_bytes():
+def max_upload_bytes():
     """The size limit in bytes, or 0 when the check is disabled."""
     return int(config.settings.max_upload_mb * 1024 * 1024) if config.settings.max_upload_mb else 0
 
 
-def _mb(n_bytes):
+def format_mb(n_bytes):
     return f"{n_bytes / (1024 * 1024):.1f} MB"
 
 
 def find_oversize_media(media):
     """[(path, kind, size_bytes)] for every file bigger than the limit (strictly greater)."""
-    limit = _max_upload_bytes()
+    limit = max_upload_bytes()
     if not limit:
         return []
     out = []
@@ -98,7 +98,7 @@ def format_oversize_instructions(source_id, data, caption, oversize, last_dest_i
     lines = [
         "",
         "═" * 72,
-        f"STOPPED: message id={source_id} has a file over the {_mb(_max_upload_bytes())} upload limit.",
+        f"STOPPED: message id={source_id} has a file over the {format_mb(max_upload_bytes())} upload limit.",
         "═" * 72,
         "None of this message's files were uploaded by the script. It is logged in:",
         f"    {config.settings.failed_file}",
@@ -108,7 +108,7 @@ def format_oversize_instructions(source_id, data, caption, oversize, last_dest_i
     for path, kind in data["media"]:
         ap = os.path.abspath(path)
         try:
-            size = _mb(os.path.getsize(path))
+            size = format_mb(os.path.getsize(path))
         except OSError:
             size = "size unknown"
         lines.append(f"    [{kind}] {ap}  ({size}){'   <-- TOO LARGE' if ap in big else ''}")
@@ -155,7 +155,7 @@ def format_oversize_instructions(source_id, data, caption, oversize, last_dest_i
 def halt_for_oversize(source_id, data, caption, oversize, id_map, ctx):
     """Log the message id, print the manual-upload instructions and request a clean stop."""
     reason = "FILE_TOO_LARGE: " + "; ".join(
-        f"{os.path.relpath(p, config.settings.base_dir)} ({_mb(sz)} > {_mb(_max_upload_bytes())} limit)"
+        f"{os.path.relpath(p, config.settings.base_dir)} ({format_mb(sz)} > {format_mb(max_upload_bytes())} limit)"
         for p, _k, sz in oversize
     )
     progress.log_failure(source_id, reason)
@@ -170,5 +170,5 @@ def halt_for_oversize(source_id, data, caption, oversize, id_map, ctx):
 
 def print_oversize_dry_run(source_id, data, oversize):
     for path, kind, size in oversize:
-        print(f"  [dry] ⚠ id={source_id:<6} OVERSIZE [{kind}] {os.path.abspath(path)} ({_mb(size)})"
+        print(f"  [dry] ⚠ id={source_id:<6} OVERSIZE [{kind}] {os.path.abspath(path)} ({format_mb(size)})"
               f" - a real run stops here")

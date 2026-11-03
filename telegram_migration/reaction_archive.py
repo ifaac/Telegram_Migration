@@ -145,7 +145,7 @@ def persist_reaction_source_metadata(reaction_map):
     for src, reactions in reaction_map.items():
         if str(src) in seen:
             continue
-        progress._append_jsonl(config.settings.reaction_source_file, {
+        progress.append_jsonl(config.settings.reaction_source_file, {
             "record_type": "source_reactions",
             "src": str(src),
             "reactions": reactions,
@@ -171,8 +171,8 @@ async def restore_reaction_archive_notes(client, channel, id_map, reaction_map, 
             )
             note_id = int(sent.id)
             note_map[source_id] = note_id
-            progress._append_jsonl(config.settings.reaction_note_map_file, {"src": str(source_id), "note_id": note_id})
-            progress._append_jsonl(config.settings.reaction_archive_file, {
+            progress.append_jsonl(config.settings.reaction_note_map_file, {"src": str(source_id), "note_id": note_id})
+            progress.append_jsonl(config.settings.reaction_archive_file, {
                 "src": str(source_id),
                 "destination_message_id": int(id_map[source_id]),
                 "reaction_note_id": note_id,
@@ -186,7 +186,7 @@ async def restore_reaction_archive_notes(client, channel, id_map, reaction_map, 
             await asyncio.sleep(fw.seconds + 5)
             break
         except Exception as exc:
-            progress._append_jsonl(config.settings.reaction_archive_file, {
+            progress.append_jsonl(config.settings.reaction_archive_file, {
                 "src": str(source_id), "destination_message_id": int(id_map[source_id]),
                 "status": "note_failed", "error": f"{type(exc).__name__}: {exc}", "reactions": reactions,
             })
