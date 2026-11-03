@@ -1,6 +1,6 @@
 """Read one message out of a Telegram Desktop HTML export."""
 
-import os.
+import os
 import re
 from datetime import datetime
 from urllib.parse import parse_qs
