@@ -1,6 +1,6 @@
 """Oversize-file handling: size check, manual-upload ledger, stop instructions."""
 
-import os
+import os.
 import re
 from datetime import datetime
 
