@@ -1,4 +1,4 @@
-"""Rebuild a Telegram Desktop chat export in a channel, resumably, with a Telegram bot.
+"""Rebuild a Telegram Desktop chat export in a channel, resumably, with a Telegram bot..
 
 Quick start::
 
