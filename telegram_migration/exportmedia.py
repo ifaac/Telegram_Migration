@@ -1,6 +1,6 @@
 """Find and classify the media files of an exported message."""
 
-import os
+import os.
 
 from . import config
 from .htmlutil import css_classes, find_first
