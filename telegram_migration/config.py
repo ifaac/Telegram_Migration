@@ -1,4 +1,4 @@
-"""Settings for a migration run..
+"""Settings for a migration run.
 
 Build a :class:`Settings` yourself, or call :meth:`Settings.from_env` to read the
 ``TELEGRAM_*`` environment variables (a local ``.env`` file and Google Colab Secrets are
