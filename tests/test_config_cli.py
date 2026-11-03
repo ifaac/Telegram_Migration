@@ -109,6 +109,10 @@ class SettingsTests(unittest.TestCase):
         self.assertEqual(config.resolve_settings(base, batch_limit=9).batch_limit, 9)
         self.assertIs(config.resolve_settings(base), base)
 
+    def test_runner_validates_settings_before_starting(self):
+        with self.assertRaises(ConfigError):
+            runner.run(Settings())
+
 
 class CommandLineTests(unittest.TestCase):
     def run_cli(self, argv, env):

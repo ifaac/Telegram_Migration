@@ -61,6 +61,7 @@ def _load_dotenv(env_file: Optional[str]) -> None:
     try:
         from dotenv import load_dotenv
     except ImportError:
+        print("Warning: python-dotenv is not installed; .env files will be ignored.")
         return
     load_dotenv(env_file) if env_file else load_dotenv()
 
@@ -244,7 +245,7 @@ def get_settings() -> Settings:
 
 
 def set_settings(new: Settings) -> Settings:
-    """Set fallback settings used outside a scoped `use_settings` context."""
+    """Set fallback settings for callers overriding the default outside `use_settings`."""
     global _default_settings
     _default_settings = new
     return new

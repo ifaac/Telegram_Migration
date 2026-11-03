@@ -9,8 +9,8 @@ Quick start::
 
 or from a shell: ``python -m telegram_migration --help``.
 
-Importing this package has no side effects: it reads no environment variables and
-touches no files until you call :func:`run` / :func:`run_async`.
+Importing this package does not read environment variables or perform file I/O.
+Configuration and filesystem access happen when you call :func:`run` / :func:`run_async`.
 """
 from ._version import __version__
 from .config import ConfigError, Settings

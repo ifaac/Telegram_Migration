@@ -16,7 +16,7 @@ def run(settings=None, **overrides):
     event loop it patches that loop with ``nest_asyncio`` and runs on the notebook's main
     thread, so ``input()`` and ``drive.mount()`` keep working.
     """
-    resolved = config.resolve_settings(settings, **overrides)
+    resolved = config.resolve_settings(settings, **overrides).validate()
     try:
         loop = asyncio.get_running_loop()
     except RuntimeError:

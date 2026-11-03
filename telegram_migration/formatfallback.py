@@ -19,7 +19,7 @@ def _is_entity_error(exc):
     return ("entit" in name or "invalid bounds" in msg or "entity_bounds" in msg)
 
 
-def note_formatting_dropped(src, text, entities, exc):
+def _note_formatting_dropped(src, text, entities, exc):
     """Record why formatting was dropped, so the real cause can be found."""
     try:
         progress.append_jsonl(config.settings.format_debug_file, {
@@ -52,7 +52,7 @@ async def with_formatting_fallback(send, kwargs, text, entities, src=None):
         raise
     except Exception as exc:
         if entities and (_is_entity_error(exc) or isinstance(exc, (TypeError, ValueError))):
-            note_formatting_dropped(src, text, entities, exc)
+            _note_formatting_dropped(src, text, entities, exc)
             retry = dict(kwargs)
             retry["formatting_entities"] = None
             return await send(**retry)

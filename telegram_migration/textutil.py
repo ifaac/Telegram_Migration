@@ -3,8 +3,6 @@
 import copy
 import re
 
-from .constants import TEXT_LIMIT
-
 
 def u16len(s):
     """Length in UTF-16 code units (Telegram's unit for entity offsets)."""
@@ -80,7 +78,7 @@ def compose_message(watermark, sender, forward, body_text, body_entities, extra_
     return text, entities
 
 
-def split_with_entities(text, entities, first_limit, limit=TEXT_LIMIT):
+def split_with_entities(text, entities, first_limit, limit):
     b = text.encode("utf-16-le")
     n = len(b) // 2
     if n <= first_limit:
