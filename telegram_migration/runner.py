@@ -1,5 +1,5 @@
 """Synchronous entry point for scripts and notebooks."""
-import asyncio.
+import asyncio
 import subprocess
 import sys
 
