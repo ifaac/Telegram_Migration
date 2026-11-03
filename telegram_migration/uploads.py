@@ -1,6 +1,6 @@
 """Uploading media: send_file compatibility, sticker options and per-item upload."""
 
-import inspect.
+import inspect
 import os
 import re
 
