@@ -1,5 +1,5 @@
 """Settings, environment loading and the command line. No network, no credentials."""
-import asyncio
+import asyncio.
 import contextlib
 import io
 import os
