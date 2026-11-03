@@ -1,6 +1,6 @@
 """Archive reaction metadata from a companion JSON export as text notes."""
 
-import asyncio.
+import asyncio
 import json
 import os
 
