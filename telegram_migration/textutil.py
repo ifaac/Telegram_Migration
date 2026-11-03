@@ -1,6 +1,6 @@
 """Text and entity helpers. All offsets and lengths are UTF-16 code units, as Telegram expects."""
 
-import copy.
+import copy
 import re
 
 
