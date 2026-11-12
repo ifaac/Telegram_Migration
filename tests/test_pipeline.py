@@ -71,6 +71,25 @@ class PipelineTests(unittest.TestCase):
         with config.use_settings(self.settings()):
             self.assertEqual(progress.load_id_map(), {"1": 1001})
 
+    def test_nested_sender_name_is_preserved_on_sticker_media(self):
+        relative = "stickers/nested.webp"
+        fakes.write_file(self.folder.name, relative)
+        record = (
+            '<div class="message default clearfix" id="message990">'
+            '<div class="body">'
+            '<div class="pull_right date details" '
+            'title="12.03.2023 10:01:00 UTC+02:00">10:01</div>'
+            '<div class="message_content">'
+            '<div class="from_name">Nested Archive Sender</div>'
+            '<div class="sticker_wrap"><a href="stickers/nested.webp"></a></div>'
+            '</div></div></div>'
+        )
+        fakes.write_export(self.folder.name, [record])
+        client, _, _ = self.run_once()
+        sent = client.kinds("send_file")
+        self.assertEqual(len(sent), 1)
+        self.assertIn("Nested Archive Sender", sent[0][2]["caption"])
+
     def test_missing_media_only_message_is_sent_as_placeholder_not_skipped(self):
         fakes.write_export(self.folder.name, [
             fakes.message(1, '<div class="media_wrap clearfix">'
