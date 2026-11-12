@@ -245,11 +245,13 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(len(sent), 6)
         for call in sent[:4]:
             self.assertIn("Forwarded from Valerie Demian", call[1])
+            self.assertIn("10 May 2026 · 17:00:58", call[1])
         self.assertTrue(sent[1][1].endswith("Хотя мне так лень"))
         self.assertTrue(sent[2][1].endswith("Портить день еще себе ток"))
         self.assertTrue(sent[3][1].endswith("Ненавижу таких мужчин , что бывших преследуют"))
         for call in sent[4:]:
             self.assertIn("Forwarded from 🍀 🌼", call[1])
+            self.assertIn("10 May 2026 · 17:02:00", call[1])
             self.assertNotIn("Forwarded from Valerie Demian", call[1])
 
     def test_reconstructed_text_forward_keeps_attribution_and_payload_in_one_message(self):
