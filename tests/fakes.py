@@ -36,7 +36,28 @@ class FakeTelegram:
         return self
 
     async def get_entity(self, peer):
-        return SimpleNamespace(title="Test channel", id=1, username=None)
+        return SimpleNamespace(
+            title="Test channel", id=1, access_hash=111,
+            username=None, broadcast=True, megagroup=False, noforwards=False,
+        )
+
+    async def __call__(self, request):
+        from telethon.tl import functions as fn
+
+        if isinstance(request, fn.channels.GetFullChannelRequest):
+            self.calls.append(("get_full_channel", request))
+            return SimpleNamespace(
+                full_chat=SimpleNamespace(linked_chat_id=2),
+                chats=[SimpleNamespace(id=2, access_hash=222)],
+            )
+        if isinstance(request, fn.messages.SendMessageRequest):
+            self.calls.append(("send_discussion_reply", request))
+            message = FakeMessage(self._new_id(), message=request.message)
+            self.messages[message.id] = message
+            return SimpleNamespace(updates=[
+                SimpleNamespace(random_id=request.random_id, id=message.id)
+            ])
+        raise AssertionError(f"Unexpected Telegram request in fake: {type(request).__name__}")
 
     async def disconnect(self):
         self.disconnected = True
