@@ -14,6 +14,15 @@ from .constants import NO_CAPTION_KINDS, STICKER_KINDS
 _native_warned = [False]
 
 
+def media_needs_text_prefix(kinds):
+    """Whether main's media caption target needs the wheel's text-reply fallback."""
+    return bool(kinds) and (
+        kinds[0] in NO_CAPTION_KINDS
+        or kinds[-1] in NO_CAPTION_KINDS
+        or any(kind in STICKER_KINDS for kind in kinds)
+    )
+
+
 async def resolve_mentions(client, entities):
     """Bots usually cannot resolve arbitrary users; such mentions stay plain text."""
     cls_in = getattr(tl, "InputMessageEntityMentionName", None)
