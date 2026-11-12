@@ -302,6 +302,48 @@ class PipelineTests(unittest.TestCase):
         with config.use_settings(self.settings()):
             self.assertEqual(progress.load_id_map(), {"136": 1001})
 
+    def test_joined_forwarded_sticker_inherits_original_author_and_timestamp(self):
+        relative = "stickers/joined-forwarded.webp"
+        fakes.write_file(self.folder.name, relative)
+        first = (
+            '<div class="message default clearfix" id="message701">'
+            '<div class="body">'
+            '<div class="pull_right date details" '
+            'title="08.11.2026 09:28:59 UTC+02:00">09:28</div>'
+            '<div class="from_name">Archive sender</div>'
+            '<div class="forwarded body">'
+            '<div class="from_name">Original sender '
+            '<span class="date details" '
+            'title="05.11.2026 19:35:11 UTC+02:00">05.11.2026 19:35:11</span>'
+            '</div>'
+            '<div class="text">preceding forwarded text</div>'
+            '</div></div></div>'
+        )
+        joined_sticker = (
+            '<div class="message default clearfix joined" id="message702">'
+            '<div class="body">'
+            '<div class="pull_right date details" '
+            'title="08.11.2026 09:29:00 UTC+02:00">09:29</div>'
+            '<div class="forwarded body">'
+            '<div class="media_wrap clearfix">'
+            f'<a class="sticker_wrap clearfix pull_left" href="{relative}"></a>'
+            '</div></div></div></div>'
+        )
+        fakes.write_export(self.folder.name, [first, joined_sticker])
+        client, _, _ = self.run_once()
+
+        self.assertEqual(len(client.kinds("send_message")), 1)
+        media_calls = client.kinds("send_file")
+        self.assertEqual(len(media_calls), 1)
+        caption = media_calls[0][2]["caption"]
+        self.assertIn("Archive sender", caption)
+        self.assertIn("8 November 2026 · 09:29", caption)
+        self.assertIn("Forwarded from Original sender", caption)
+        self.assertIn("5 November 2026 · 19:35:11", caption)
+        self.assertIsNone(media_calls[0][2]["reply_to"])
+        with config.use_settings(self.settings()):
+            self.assertEqual(progress.load_id_map(), {"701": 1001, "702": 1002})
+
     def test_reconstructed_forward_keeps_body_formatting_below_attribution_bar(self):
         forwarded = (
             '<div class="message default clearfix" id="message138">'
