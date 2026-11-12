@@ -2041,5 +2041,37 @@ class PipelineTests(unittest.TestCase):
             self.assertEqual(set(progress.load_id_map()), {"1", "2", "3", "4", "5", "6"})
 
 
+    def test_attribution_without_discussion_group_becomes_standalone_channel_post(self):
+        async def exercise():
+            client = FakeTelegram()
+            channel = await client.get_entity("destination")
+            state = {"src": "messages.html"}
+            with config.use_settings(self.settings()):
+                with patch.object(FakeTelegram, "linked_chat_id", None):
+                    first_id = await sending._send_attribution_reply(
+                        client, channel, 1003, "Alice\\n12 March 2023", [],
+                        state, 19384, "sticker_attribution_reply",
+                    )
+                    # A resumed call reuses the saved attribution ID; it must
+                    # not publish a second standalone channel post.
+                    second_id = await sending._send_attribution_reply(
+                        client, channel, 1003, "Alice\\n12 March 2023", [],
+                        state, 19384, "sticker_attribution_reply",
+                    )
+            self.assertEqual(first_id, second_id)
+            posts = client.kinds("send_channel_attribution")
+            self.assertEqual(len(posts), 1)
+            request = posts[0][1]
+            self.assertEqual(request.peer.channel_id, 1)
+            self.assertIsNone(request.reply_to)
+            self.assertEqual(request.message, "Alice\\n12 March 2023")
+            self.assertEqual(
+                state["sticker_attribution_reply"]["delivery_mode"],
+                "standalone_channel_post",
+            )
+
+        asyncio.run(exercise())
+
+
 if __name__ == "__main__":
     unittest.main()
