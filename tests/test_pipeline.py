@@ -1869,14 +1869,14 @@ class PipelineTests(unittest.TestCase):
             with patch.object(progress, "save_state"):
                 result = await sending._send_multiple_media(
                     client, "channel",
-                    [("Forwarded from Original sender\\n5 November 2026", [])],
+                    [("Forwarded from Original sender\n5 November 2026", [])],
                     media, None, state, "702",
                 )
             self.assertEqual(result, 801)
             self.assertEqual(len(calls), 2)
             self.assertEqual(calls[0][1]["caption"], "")
             self.assertEqual(calls[1][1]["caption"],
-                             "Forwarded from Original sender\\n5 November 2026")
+                             "Forwarded from Original sender\n5 November 2026")
             self.assertTrue(any(
                 isinstance(attribute, tl.DocumentAttributeSticker)
                 for attribute in calls[0][1]["attributes"]
@@ -1980,14 +1980,14 @@ class PipelineTests(unittest.TestCase):
         media_calls = client.kinds("send_file")
         self.assertEqual(len(media_calls), 4)
         captions = [call[2]["caption"] for call in media_calls]
-        self.assertIn("Alice\\n12 March 2023", captions[0])
-        self.assertIn("Alice\\n12 March 2023", captions[1])
-        self.assertIn("Bob\\n12 March 2023", captions[2])
-        self.assertIn("Bob\\n12 March 2023", captions[3])
+        self.assertIn("Alice\n12 March 2023", captions[0])
+        self.assertIn("Alice\n12 March 2023", captions[1])
+        self.assertIn("Bob\n12 March 2023", captions[2])
+        self.assertIn("Bob\n12 March 2023", captions[3])
         self.assertTrue(captions[0].endswith("Voice message"))
         self.assertTrue(captions[1].endswith("Voice message"))
         self.assertEqual(client.texts(), [
-            "Bob\\n12 March 2023 · 10:05\\n\\njoined emoji-only continuation"
+            "Bob\n12 March 2023 · 10:05\n\njoined emoji-only continuation"
         ])
         self.assertIn("sent=5", output)
         self.assertIn("failed=0", output)
