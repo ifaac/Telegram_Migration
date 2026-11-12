@@ -960,12 +960,18 @@ class AsyncSendTests(unittest.TestCase):
     def test_inferred_incompatible_media_group_sends_in_order_and_returns_all_ids(self):
         async def scenario():
             calls = []
+            stored = {}
             async def send_file(channel, path, **kwargs):
                 calls.append((path, dict(kwargs)))
-                return SimpleNamespace(
+                message = SimpleNamespace(
                     id=700 + len(calls), message=kwargs.get("caption") or "",
+                    text=kwargs.get("caption") or "",
                 )
-            client = SimpleNamespace(send_file=send_file)
+                stored[message.id] = message
+                return message
+            async def get_messages(channel, ids=None):
+                return stored.get(int(ids)) if ids is not None else None
+            client = SimpleNamespace(send_file=send_file, get_messages=get_messages)
             state = {"src": "900"}
             data = {
                 "_inferred_album": True,
