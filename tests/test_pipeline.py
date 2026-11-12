@@ -1870,6 +1870,7 @@ class PipelineTests(unittest.TestCase):
                     '<div class="sticker_wrap">'
                     f'<a href="{relative}"></a>'
                     '</div>'
+                    '<div class="text">Sticker context with 😀 emoji</div>'
                     '</div></div></div>'
                 )
                 fakes.write_export(self.folder.name, [forwarded])
@@ -1880,6 +1881,19 @@ class PipelineTests(unittest.TestCase):
                 self.assertIn("Archive sender", prefix_messages[0][1])
                 self.assertIn("Forwarded from Original sender", prefix_messages[0][1])
                 self.assertIn("5 November 2026 · 19:35:11", prefix_messages[0][1])
+                self.assertIn("Sticker context with 😀 emoji", prefix_messages[0][1])
+                prefix_entities = prefix_messages[0][2]["formatting_entities"]
+                self.assertTrue(any(
+                    type(entity).__name__ == "MessageEntityBold"
+                    and prefix_messages[0][1][entity.offset:entity.offset + entity.length]
+                    == "Archive sender"
+                    for entity in prefix_entities
+                ))
+                self.assertTrue(any(
+                    type(entity).__name__ == "MessageEntityItalic"
+                    and "8 November 2026" in prefix_messages[0][1][entity.offset:entity.offset + entity.length]
+                    for entity in prefix_entities
+                ))
                 calls = client.kinds("send_file")
                 self.assertEqual(len(calls), 1)
                 sent_path, kwargs = calls[0][1], calls[0][2]
@@ -1934,6 +1948,42 @@ class PipelineTests(unittest.TestCase):
             ))
         asyncio.run(scenario())
 
+
+    def test_captionable_photo_then_voice_note_uses_prefix_when_main_would_caption_voice(self):
+        async def scenario():
+            calls = []
+
+            async def send_file(channel, path, **kwargs):
+                calls.append(("send_file", path, kwargs))
+                return type("Sent", (), {"id": 801 + len(calls)})()
+
+            async def send_message(channel, text, **kwargs):
+                calls.append(("send_message", text, kwargs))
+                return type("Sent", (), {"id": 800})()
+
+            client = type("Client", (), {})()
+            client.send_file = send_file
+            client.send_message = send_message
+            media = [
+                ("photos/first.png", "photo"),
+                ("voice_messages/last.ogg", "voice"),
+            ]
+            state = {"src": "703"}
+            with patch.object(progress, "save_state"):
+                result = await sending._send_multiple_media(
+                    client, "channel",
+                    [("Alice\\n12 March 2023 · 10:03\\n\\nFull message", [])],
+                    media, None, state, "703",
+                )
+            self.assertEqual(result, 800)
+            self.assertEqual([call[0] for call in calls],
+                             ["send_message", "send_file", "send_file"])
+            self.assertEqual(calls[1][2]["reply_to"], 800)
+            self.assertEqual(calls[2][2]["reply_to"], 800)
+            self.assertEqual(calls[1][2]["caption"], "")
+            self.assertEqual(calls[2][2]["caption"], "")
+            self.assertTrue(calls[2][2]["voice_note"])
+        asyncio.run(scenario())
 
     def test_single_html_record_keeps_mixed_photo_video_media_together_in_source_order(self):
         # Each source message contains multiple media anchors inside one
