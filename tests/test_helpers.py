@@ -992,6 +992,101 @@ class AsyncSendTests(unittest.TestCase):
         self.assertTrue(repeated_author["forward_timestamp_has_time"])
         self.assertTrue(repeated_author["forward_timestamp_has_seconds"])
 
+    def test_single_voice_caption_is_repaired_on_the_voice_message(self):
+        async def scenario():
+            calls = []
+            saved = {}
+
+            async def send_file(channel, path, **kwargs):
+                calls.append(("send_file", path, dict(kwargs)))
+                message = SimpleNamespace(id=881, message="", text="")
+                saved[881] = message
+                return message
+
+            async def get_messages(channel, ids=None):
+                return saved.get(int(ids))
+
+            async def edit_message(channel, message_id, text, **kwargs):
+                calls.append(("edit_message", int(message_id), text, dict(kwargs)))
+                saved[int(message_id)].message = text
+                saved[int(message_id)].text = text
+                return saved[int(message_id)]
+
+            client = SimpleNamespace(
+                send_file=send_file, get_messages=get_messages,
+                edit_message=edit_message,
+            )
+            state = {"src": "voice-caption-repair"}
+            caption = "Alice\\n12 March 2023\\n\\nvoice"
+            with patch.object(progress, "save_state"):
+                result = await sending._send_single_media(
+                    client, "channel", [(caption, [])],
+                    [("voice_messages/test.ogg", "voice")],
+                    None, state, "voice-caption-repair",
+                )
+
+            self.assertEqual(result, 881)
+            self.assertTrue(calls[0][2]["voice_note"])
+            self.assertEqual([call[0] for call in calls], ["send_file", "edit_message"])
+            self.assertEqual(calls[1][1], 881)
+            self.assertEqual(calls[1][2], caption)
+            self.assertEqual(saved[881].message, caption)
+            self.assertNotIn("send_message", [call[0] for call in calls])
+        asyncio.run(scenario())
+
+    def test_sticker_sequence_keeps_caption_on_final_sticker_without_text_post(self):
+        async def scenario():
+            calls = []
+            saved = {}
+
+            async def send_media_item(client, channel, path, kind, reply_to, source_id,
+                                      *, caption="", entities=None):
+                calls.append(("send_media_item", path, kind, caption, entities))
+                message_id = 901 + len(calls)
+                message = SimpleNamespace(id=message_id, message=caption, text=caption)
+                if kind == "sticker_animated":
+                    # Simulate Telegram returning the final sticker without its caption.
+                    message.message = ""
+                    message.text = ""
+                saved[message_id] = message
+                return message
+
+            async def get_messages(channel, ids=None):
+                return saved.get(int(ids))
+
+            async def edit_message(channel, message_id, text, **kwargs):
+                calls.append(("edit_message", int(message_id), text, dict(kwargs)))
+                saved[int(message_id)].message = text
+                saved[int(message_id)].text = text
+                return saved[int(message_id)]
+
+            client = SimpleNamespace(
+                get_messages=get_messages, edit_message=edit_message,
+            )
+            state = {"src": "sticker-sequence"}
+            caption = "Alice\\n12 March 2023\\n\\nemoji sequence"
+            with patch.object(sending.uploads, "send_media_item", side_effect=send_media_item), \
+                 patch.object(progress, "save_state"):
+                result = await sending._send_individual_media(
+                    client, "channel", [(caption, [])],
+                    [
+                        ("stickers/first.webp", "sticker_static"),
+                        ("stickers/last.tgs", "sticker_animated"),
+                    ],
+                    None, state, "sticker-sequence",
+                )
+
+            self.assertFalse(result)
+            self.assertEqual(state["multi_media_ids"], [902, 903])
+            self.assertEqual(calls[0][3], "")
+            self.assertEqual(calls[1][3], caption)
+            self.assertEqual(calls[2][0], "edit_message")
+            self.assertEqual(calls[2][1], 903)
+            self.assertEqual(calls[2][2], caption)
+            self.assertEqual(saved[903].message, caption)
+            self.assertEqual(len([c for c in calls if c[0] == "edit_message"]), 1)
+        asyncio.run(scenario())
+
     def test_document_upload_forces_document_and_disables_reparsing(self):
         async def scenario():
             calls = []
