@@ -349,10 +349,11 @@ async def _do_send(client, channel, chunks, media, reply_to, forward_source,
         )
 
     if data and data.get("_sticker_attribution_reply"):
-        if len(media) != 1:
+        if (len(media) != 1
+                or not str(media[0][0]).casefold().endswith(".tgs")):
             raise RuntimeError(
-                "Attribution-reply fallback is only enabled for a standalone "
-                "sticker message; multi-media messages keep their existing send path."
+                "Separate sticker attribution is restricted to one standalone "
+                "TGS sticker; other sticker formats keep their original send path."
             )
         path, kind = media[0]
         return await _send_sticker_with_attribution_reply(
