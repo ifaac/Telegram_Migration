@@ -302,8 +302,7 @@ async def _process_message(elem, client, channel, id_map, partial, pending_repli
         annotation = [(annotation_text, annotation_entities)] if annotation_text.strip() else None
 
         kinds = [kind for _path, kind in data["media"]]
-        # Every supported media type carries its message context as a media
-        # caption. Text-only messages use the larger message limit.
+        # Media captions carry context; text-only messages use the larger limit.
         first_limit = (
             config.settings.caption_limit if kinds
             else config.settings.text_limit
@@ -426,10 +425,6 @@ async def _run_migration():
     ctx = {
         "inline_custom_emoji_ids": inline_custom_emoji_ids,
         "last_sender": "",
-        "last_forward_name": "",
-        "last_forward_timestamp": None,
-        "last_forward_timestamp_has_time": False,
-        "last_forward_timestamp_has_seconds": False,
         "current_export_date": None,
         "stop": False,
         "source_ids": source_ids,
