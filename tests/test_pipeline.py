@@ -1850,7 +1850,7 @@ class PipelineTests(unittest.TestCase):
                 caption = calls[0][2]["caption"]
                 self.assertIn("Alice", caption)
                 self.assertIn("12 March 2023 · 10:", caption)
-                self.assertTrue(caption.endswith("\\n\\n"))
+                self.assertNotIn("Forwarded from", caption)
                 self.assertEqual(calls[0][2]["reply_to"], None)
 
     def test_forwarded_static_and_video_stickers_keep_attribution_in_media_caption(self):
