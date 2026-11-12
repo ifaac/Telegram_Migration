@@ -105,12 +105,6 @@ async def _send_attribution_reply(client, channel, target_message_id, text,
                 "Cannot reply to this channel post: Telegram did not provide "
                 "the channel access hash."
             )
-        if getattr(channel, "noforwards", False):
-            raise RuntimeError(
-                "Cannot reply to this protected channel post: Telegram does not "
-                "allow cross-chat replies to protected messages."
-            )
-
         input_channel = tl.InputChannel(
             channel_id=channel_id, access_hash=int(access_hash)
         )
@@ -127,10 +121,10 @@ async def _send_attribution_reply(client, channel, target_message_id, text,
             linked_chat_id = getattr(
                 getattr(full, "full_chat", None), "linked_chat_id", None
             )
-            if not linked_chat_id:
-                # A broadcast channel without a discussion group cannot host
-                # comments. Preserve attribution as the next channel post
-                # instead of failing/retrying the already-sent sticker or emoji.
+            if not linked_chat_id or getattr(channel, "noforwards", False):
+                # A channel without a discussion group cannot host comments;
+                # protected channel posts also cannot be cross-chat replied to.
+                # In either case, preserve attribution as the next channel post.
                 standalone = True
                 progress_state["delivery_mode"] = "standalone_channel_post"
                 progress.save_state(state["src"], state)
