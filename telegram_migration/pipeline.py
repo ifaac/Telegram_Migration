@@ -11,6 +11,7 @@ from telethon.tl import types as tl
 from . import album, bigfiles, cli, config, customemoji, htmlexport, mediatools, progress, reaction_archive, replylinks, sending, uploads
 from .htmlutil import css_classes
 from .textutil import compose_message, compose_message_header, format_archive_timestamp, split_with_entities, strip_with_entities, u16len
+from .constants import NO_CAPTION_KINDS
 
 async def process_file(client, channel, path, id_map, partial, pending_replies, stats, ctx,
                       only_pending=False):
@@ -303,11 +304,14 @@ async def _process_message(elem, client, channel, id_map, partial, pending_repli
         annotation = [(annotation_text, annotation_entities)] if annotation_text.strip() else None
 
         kinds = [kind for _path, kind in data["media"]]
-        # Every supported media type carries its message context as a media
-        # caption. Text-only messages use the larger message limit.
+        # Keep main's caption path for normal media. When a no-caption media
+        # kind is present, the first-wheel fallback sends the composed text
+        # as a normal message before sending the media as its reply.
+        needs_text_prefix = any(kind in NO_CAPTION_KINDS for kind in kinds)
         first_limit = (
-            config.settings.caption_limit if kinds
-            else config.settings.text_limit
+            config.settings.text_limit
+            if not kinds or needs_text_prefix
+            else config.settings.caption_limit
         )
         kind_summary = ",".join(kinds) or "text"
         when = timestamp.strftime("%Y-%m-%d %H:%M") if timestamp else "?"
