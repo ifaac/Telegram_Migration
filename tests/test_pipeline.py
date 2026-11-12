@@ -701,13 +701,18 @@ class PipelineTests(unittest.TestCase):
             if call[1] == os.path.join(self.folder.name, photo_path)
         )
         self.assertEqual(len(sticker_calls), 2)
-        self.assertEqual(sticker_calls[0][2]["reply_to"], 1001)
+        self.assertEqual(len(client.kinds("send_message")), 3)
+        # Sender/forward text is the mapped reply target for each sticker.
+        self.assertEqual(sticker_calls[0][2]["reply_to"], 1002)
         self.assertEqual(photo_call[2]["reply_to"], 1002)
-        self.assertIsNone(sticker_calls[1][2]["reply_to"])
-        self.assertIn("Forwarded from Valerie Demian", sticker_calls[1][2]["caption"])
-        self.assertNotIn("The impotent old man and the sea", sticker_calls[1][2]["caption"])
+        self.assertEqual(sticker_calls[1][2]["reply_to"], 1005)
+        self.assertEqual(sticker_calls[0][2]["caption"], "")
+        self.assertEqual(sticker_calls[1][2]["caption"], "")
+        self.assertIn("Forwarded from Valerie Demian", client.texts()[1])
+        self.assertIn("Forwarded from Valerie Demian", client.texts()[2])
+        self.assertNotIn("The impotent old man and the sea", client.texts()[1])
         self.assertIn("The impotent old man and the sea", photo_call[2]["caption"])
-        self.assertEqual(client.texts(), ["Alice\n\nearlier source message"])
+        self.assertEqual(client.texts()[0], "Alice\n\nearlier source message")
         with config.use_settings(self.settings()):
             self.assertEqual(
                 progress.load_id_map(),
@@ -774,18 +779,35 @@ class PipelineTests(unittest.TestCase):
                 calls = client.kinds("send_file")
                 self.assertEqual(len(calls), 1)
                 kwargs = calls[0][2]
-                self.assertIn("Forwarded from News Channel", kwargs["caption"])
-                self.assertNotIn("In reply to the original conversation", kwargs["caption"])
-                self.assertIsNone(kwargs["reply_to"])
-                self.assertEqual(client.kinds("send_message"), [])
+                prefix_kind = expected_kind in {
+                    "voice", "round_video", "sticker_static",
+                    "sticker_animated", "sticker_video",
+                }
+                if prefix_kind:
+                    prefix_messages = client.kinds("send_message")
+                    self.assertEqual(len(prefix_messages), 1)
+                    prefix_text = prefix_messages[0][1]
+                    self.assertIn("Forwarded from News Channel", prefix_text)
+                    self.assertNotIn("In reply to the original conversation", prefix_text)
+                    self.assertEqual(kwargs["caption"], "")
+                    self.assertEqual(kwargs["reply_to"], 1001)
+                    self.assertTrue(any(
+                        type(entity).__name__ == "MessageEntityBlockquote"
+                        for entity in prefix_messages[0][2]["formatting_entities"]
+                    ))
+                else:
+                    self.assertIn("Forwarded from News Channel", kwargs["caption"])
+                    self.assertNotIn("In reply to the original conversation", kwargs["caption"])
+                    self.assertIsNone(kwargs["reply_to"])
+                    self.assertEqual(client.kinds("send_message"), [])
+                    self.assertTrue(
+                        any(type(entity).__name__ == "MessageEntityBlockquote"
+                            for entity in kwargs["formatting_entities"])
+                    )
                 if expected_kind == "voice":
                     self.assertTrue(kwargs["voice_note"])
                 if expected_kind == "round_video":
-                    self.assertNotIn("video_note", kwargs)
-                self.assertTrue(
-                    any(type(entity).__name__ == "MessageEntityBlockquote"
-                        for entity in kwargs["formatting_entities"])
-                )
+                    self.assertTrue(kwargs["video_note"])
 
     def test_forwarded_original_reply_takes_priority_over_outer_reply(self):
         media_path = "audio_files/forwarded-track.mp3"
@@ -854,18 +876,22 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(parsed["forward_reply_preview"], "In reply to the earlier conversation")
 
         client, _, _ = self.run_once(native_forward=False)
-        self.assertEqual(client.kinds("send_message"), [])
+        prefix_messages = client.kinds("send_message")
+        self.assertEqual(len(prefix_messages), 1)
+        prefix_text = prefix_messages[0][1]
+        self.assertIn("Archive owner", prefix_text)
+        self.assertIn("Forwarded from Original voice author", prefix_text)
+        self.assertNotIn("In reply to the earlier conversation", prefix_text)
+        self.assertTrue(any(
+            type(entity).__name__ == "MessageEntityBlockquote"
+            for entity in prefix_messages[0][2]["formatting_entities"]
+        ))  # Forward attribution stays formatted in the text prefix.
         calls = client.kinds("send_file")
         self.assertEqual(len(calls), 1)
         kwargs = calls[0][2]
         self.assertTrue(kwargs["voice_note"])
-        self.assertIsNone(kwargs["reply_to"])
-        self.assertIn("Forwarded from Original voice author", kwargs["caption"])
-        self.assertNotIn("In reply to the earlier conversation", kwargs["caption"])
-        self.assertTrue(any(
-            type(entity).__name__ == "MessageEntityBlockquote"
-            for entity in kwargs["formatting_entities"]
-        ))  # The remaining blockquote is the forwarded-from attribution.
+        self.assertEqual(kwargs["caption"], "")
+        self.assertEqual(kwargs["reply_to"], 1001)
 
     def test_oversize_file_stops_cleanly_and_the_next_run_skips_it(self):
         fakes.write_file(self.folder.name, "video_files/big.mp4", size=2 * 1024 * 1024)
@@ -1762,7 +1788,7 @@ class PipelineTests(unittest.TestCase):
         self.assertFalse(any("caption 801" in text for text in client.texts()))
 
 
-    def test_forwarded_round_video_keeps_attribution_in_same_media_message(self):
+    def test_forwarded_round_video_replies_to_sender_context(self):
         media_path = "round_video_messages/forwarded-round-video.mp4"
         fakes.write_file(self.folder.name, media_path)
         forwarded = (
@@ -1786,13 +1812,16 @@ class PipelineTests(unittest.TestCase):
 
         client, _, _ = self.run_once()
 
-        self.assertEqual(client.kinds("send_message"), [])
+        prefix_messages = client.kinds("send_message")
+        self.assertEqual(len(prefix_messages), 1)
+        self.assertIn("Forwarded from HLI8IOS", prefix_messages[0][1])
+        self.assertIn("forwarded round-video caption", prefix_messages[0][1])
         media_calls = client.kinds("send_file")
         self.assertEqual(len(media_calls), 1)
         kwargs = media_calls[0][2]
-        self.assertNotIn("video_note", kwargs)
-        self.assertIn("Forwarded from HLI8IOS", kwargs["caption"])
-        self.assertIn("forwarded round-video caption", kwargs["caption"])
+        self.assertTrue(kwargs["video_note"])
+        self.assertEqual(kwargs["caption"], "")
+        self.assertEqual(kwargs["reply_to"], 1001)
 
     def test_inferred_run_longer_than_ten_is_split_into_ordered_albums(self):
         records = [fakes.message(1, fakes.text("sender"), sender="Alice", minute=1)]
@@ -1816,7 +1845,7 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual([row["msg_id"] for row in groups["12"]], ["12", "13"])
 
 
-    def test_forwarded_static_and_video_stickers_keep_attribution_in_media_caption(self):
+    def test_forwarded_static_and_video_stickers_reply_to_sender_context(self):
         # Exercise HTML reconstruction through the actual send_file call for
         # both sticker formats that previously emitted a separate text message.
         for extension in (".webp", ".tgs", ".webm"):
@@ -1846,14 +1875,17 @@ class PipelineTests(unittest.TestCase):
                 fakes.write_export(self.folder.name, [forwarded])
                 client, _, _ = self.run_once()
 
-                self.assertEqual(client.kinds("send_message"), [])
+                prefix_messages = client.kinds("send_message")
+                self.assertEqual(len(prefix_messages), 1)
+                self.assertIn("Archive sender", prefix_messages[0][1])
+                self.assertIn("Forwarded from Original sender", prefix_messages[0][1])
+                self.assertIn("5 November 2026 · 19:35:11", prefix_messages[0][1])
                 calls = client.kinds("send_file")
                 self.assertEqual(len(calls), 1)
                 sent_path, kwargs = calls[0][1], calls[0][2]
                 self.assertEqual(sent_path, os.path.join(self.folder.name, relative))
-                self.assertIn("Forwarded from Original sender", kwargs["caption"])
-                self.assertIn("5 November 2026 · 19:35:11", kwargs["caption"])
-                self.assertIsNone(kwargs["reply_to"])
+                self.assertEqual(kwargs["caption"], "")
+                self.assertEqual(kwargs["reply_to"], 1001)
                 self.assertTrue(kwargs["force_document"])
                 self.assertTrue(any(
                     isinstance(attribute, tl.DocumentAttributeSticker)
@@ -1871,7 +1903,8 @@ class PipelineTests(unittest.TestCase):
                 return type("Sent", (), {"id": 800 + len(calls)})()
 
             async def send_message(channel, text, **kwargs):
-                raise AssertionError("caption must not be emitted as a separate text message")
+                calls.append(("send_message", text, kwargs))
+                return type("Sent", (), {"id": 800})()
 
             client = type("Client", (), {})()
             client.send_file = send_file
@@ -1887,11 +1920,14 @@ class PipelineTests(unittest.TestCase):
                     [("Forwarded from Original sender\\n5 November 2026", [])],
                     media, None, state, "702",
                 )
-            self.assertEqual(result, 801)
-            self.assertEqual(len(calls), 2)
-            self.assertEqual(calls[0][1]["caption"], "")
-            self.assertEqual(calls[1][1]["caption"],
-                             "Forwarded from Original sender\\n5 November 2026")
+            self.assertEqual(result, 800)
+            self.assertEqual(len(calls), 3)
+            self.assertEqual(calls[0][0], "send_message")
+            self.assertIn("Forwarded from Original sender", calls[0][1])
+            self.assertEqual(calls[1][2]["reply_to"], 800)
+            self.assertEqual(calls[2][2]["reply_to"], 800)
+            self.assertEqual(calls[1][2]["caption"], "")
+            self.assertEqual(calls[2][2]["caption"], "")
             self.assertTrue(any(
                 isinstance(attribute, tl.DocumentAttributeSticker)
                 for attribute in calls[0][1]["attributes"]
