@@ -918,6 +918,50 @@ class AsyncSendTests(unittest.TestCase):
             self.assertEqual(saved["42"]["text_prog"]["first"], 999)
         asyncio.run(scenario())
 
+    def test_missing_media_caption_is_repaired_in_place_without_a_text_post(self):
+        async def scenario():
+            calls = []
+            saved = {}
+
+            async def send_file(channel, path, **kwargs):
+                calls.append(("send_file", path, dict(kwargs)))
+                message = SimpleNamespace(id=880, message="", text="")
+                saved[880] = message
+                return message
+
+            async def get_messages(channel, ids=None):
+                return saved.get(int(ids))
+
+            async def edit_message(channel, message_id, text, **kwargs):
+                calls.append(("edit_message", int(message_id), text, dict(kwargs)))
+                saved[int(message_id)].message = text
+                saved[int(message_id)].text = text
+                return saved[int(message_id)]
+
+            client = SimpleNamespace(
+                send_file=send_file, get_messages=get_messages,
+                edit_message=edit_message,
+            )
+            state = {"src": "caption-repair"}
+            bold = tl.MessageEntityBold(offset=0, length=5)
+            caption = "Alice\\n12 March 2023\\n\\nhello"
+            with patch.object(progress, "save_state"):
+                result = await sending._send_single_media(
+                    client, "channel", [(caption, [bold])],
+                    [("stickers/test.webp", "sticker_static")],
+                    None, state, "caption-repair",
+                )
+
+            self.assertEqual(result, 880)
+            self.assertEqual([call[0] for call in calls], ["send_file", "edit_message"])
+            self.assertEqual(calls[1][1], 880)
+            self.assertEqual(calls[1][2], caption)
+            self.assertEqual(calls[1][3]["formatting_entities"], [bold])
+            self.assertEqual(saved[880].message, caption)
+            self.assertNotIn("send_message", [call[0] for call in calls])
+            self.assertTrue(state["media_caption_verified"])
+        asyncio.run(scenario())
+
     def test_document_upload_forces_document_and_disables_reparsing(self):
         async def scenario():
             calls = []
