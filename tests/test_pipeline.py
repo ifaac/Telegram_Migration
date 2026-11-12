@@ -90,6 +90,36 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(len(sent), 1)
         self.assertIn("Nested Archive Sender", sent[0][2]["caption"])
 
+    def test_nested_sender_name_is_preserved_on_audio_and_video_media(self):
+        cases = (
+            ("audio_files/nested.mp3",
+             '<a class="media_audio_file" href="audio_files/nested.mp3"></a>'),
+            ("video_files/nested.mp4",
+             '<a class="video_file_wrap" href="video_files/nested.mp4"></a>'),
+        )
+        for index, (relative, anchor_html) in enumerate(cases, start=1):
+            with self.subTest(relative=relative):
+                self.folder.cleanup()
+                self.folder = tempfile.TemporaryDirectory()
+                self.addCleanup(self.folder.cleanup)
+                fakes.write_file(self.folder.name, relative)
+                record = (
+                    f'<div class="message default clearfix" id="message{990 + index}">'
+                    '<div class="body">'
+                    '<div class="pull_right date details" '
+                    'title="12.03.2023 10:01:00 UTC+02:00">10:01</div>'
+                    '<div class="message_content">'
+                    '<div class="from_name">Nested Archive Sender</div>'
+                    '<div class="media_wrap clearfix">'
+                    + anchor_html +
+                    '</div></div></div></div>'
+                )
+                fakes.write_export(self.folder.name, [record])
+                client, _, _ = self.run_once()
+                sent = client.kinds("send_file")
+                self.assertEqual(len(sent), 1)
+                self.assertIn("Nested Archive Sender", sent[0][2]["caption"])
+
     def test_missing_media_only_message_is_sent_as_placeholder_not_skipped(self):
         fakes.write_export(self.folder.name, [
             fakes.message(1, '<div class="media_wrap clearfix">'
