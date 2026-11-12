@@ -303,10 +303,11 @@ async def _process_message(elem, client, channel, id_map, partial, pending_repli
         annotation = [(annotation_text, annotation_entities)] if annotation_text.strip() else None
 
         kinds = [kind for _path, kind in data["media"]]
-        needs_text_prefix = sending.media_needs_text_prefix(kinds)
+        # Every supported media type carries its message context as a media
+        # caption. Text-only messages use the larger message limit.
         first_limit = (
-            config.settings.text_limit if not kinds or needs_text_prefix
-            else config.settings.caption_limit
+            config.settings.caption_limit if kinds
+            else config.settings.text_limit
         )
         kind_summary = ",".join(kinds) or "text"
         when = timestamp.strftime("%Y-%m-%d %H:%M") if timestamp else "?"
