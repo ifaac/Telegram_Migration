@@ -223,7 +223,7 @@ async def _process_message(elem, client, channel, id_map, partial, pending_repli
             )
         else:
             header = compose_message_header(timestamp, data["sender"])
-        if (len(data.get("media") or []) == 1:
+        if len(data.get("media") or []) == 1:
             media_kind = data["media"][0][1]
             if media_kind.startswith("sticker_"):
                 data["_sticker_attribution_reply"] = True
