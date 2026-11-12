@@ -704,8 +704,15 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(sticker_calls[0][2]["reply_to"], 1001)
         self.assertEqual(photo_call[2]["reply_to"], 1002)
         self.assertIsNone(sticker_calls[1][2]["reply_to"])
-        self.assertIn("Forwarded from Valerie Demian", sticker_calls[1][2]["caption"])
-        self.assertNotIn("The impotent old man and the sea", sticker_calls[1][2]["caption"])
+        self.assertEqual(sticker_calls[1][2]["caption"], "")
+        sticker_attributions = client.kinds("send_discussion_reply")
+        self.assertEqual(len(sticker_attributions), 2)
+        self.assertTrue(any(
+            "Forwarded from Valerie Demian" in call[1].message
+            for call in sticker_attributions
+        ))
+        self.assertNotIn("The impotent old man and the sea",
+                         sticker_attributions[-1][1].message)
         self.assertIn("The impotent old man and the sea", photo_call[2]["caption"])
         self.assertEqual(client.texts(), ["Alice\n\nearlier source message"])
         with config.use_settings(self.settings()):
@@ -774,10 +781,25 @@ class PipelineTests(unittest.TestCase):
                 calls = client.kinds("send_file")
                 self.assertEqual(len(calls), 1)
                 kwargs = calls[0][2]
-                self.assertIn("Forwarded from News Channel", kwargs["caption"])
                 self.assertNotIn("In reply to the original conversation", kwargs["caption"])
                 self.assertIsNone(kwargs["reply_to"])
-                self.assertEqual(client.kinds("send_message"), [])
+                if expected_kind.startswith("sticker"):
+                    self.assertEqual(kwargs["caption"], "")
+                    attribution = client.kinds("send_discussion_reply")
+                    self.assertEqual(len(attribution), 1)
+                    self.assertIn("Forwarded from News Channel",
+                                  attribution[0][1].message)
+                    self.assertNotIn(
+                        "In reply to the original conversation",
+                        attribution[0][1].message,
+                    )
+                    self.assertTrue(any(
+                        type(entity).__name__ == "MessageEntityBlockquote"
+                        for entity in attribution[0][1].entities
+                    ))
+                else:
+                    self.assertIn("Forwarded from News Channel", kwargs["caption"])
+                    self.assertEqual(client.kinds("send_message"), [])
                 if expected_kind == "voice":
                     self.assertTrue(kwargs["voice_note"])
                 if expected_kind == "round_video":
@@ -1836,8 +1858,11 @@ class PipelineTests(unittest.TestCase):
                 self.assertEqual(len(calls), 1)
                 sent_path, kwargs = calls[0][1], calls[0][2]
                 self.assertEqual(sent_path, os.path.join(self.folder.name, relative))
-                self.assertIn("Forwarded from Original sender", kwargs["caption"])
-                self.assertIn("5 November 2026 · 19:35:11", kwargs["caption"])
+                self.assertEqual(kwargs["caption"], "")
+                attribution = client.kinds("send_discussion_reply")
+                self.assertEqual(len(attribution), 1)
+                self.assertIn("Forwarded from Original sender", attribution[0][1].message)
+                self.assertIn("5 November 2026 · 19:35:11", attribution[0][1].message)
                 self.assertIsNone(kwargs["reply_to"])
                 self.assertTrue(any(
                     isinstance(attribute, tl.DocumentAttributeSticker)
@@ -1995,8 +2020,8 @@ class PipelineTests(unittest.TestCase):
 
         # Voice notes stay as native voice-note uploads with sender/date captions.
         captions = [call[2]["caption"] for call in media_calls]
-        self.assertIn("Alice\\n12 March 2023", captions[0])
-        self.assertIn("Alice\\n12 March 2023", captions[1])
+        self.assertIn("Alice\n12 March 2023", captions[0])
+        self.assertIn("Alice\n12 March 2023", captions[1])
         self.assertTrue(media_calls[0][2]["voice_note"])
         self.assertTrue(media_calls[1][2]["voice_note"])
 
@@ -2014,8 +2039,8 @@ class PipelineTests(unittest.TestCase):
         discussion_replies = client.kinds("send_discussion_reply")
         self.assertEqual(len(discussion_replies), 3)
         requests = [call[1] for call in discussion_replies]
-        self.assertIn("ㅤㅤㅤㅤㅤㅤ 🗝 ㅤㅤㅤㅤㅤㅤ\\n12 March 2023", requests[0].message)
-        self.assertIn("esprít\\n12 March 2023", requests[1].message)
+        self.assertIn("ㅤㅤㅤㅤㅤㅤ 🗝 ㅤㅤㅤㅤㅤㅤ\n12 March 2023", requests[0].message)
+        self.assertIn("esprít\n12 March 2023", requests[1].message)
         self.assertEqual(requests[0].reply_to.reply_to_msg_id, 1003)
         self.assertEqual(requests[1].reply_to.reply_to_msg_id, 1005)
         for request in requests:
@@ -2028,11 +2053,11 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(len(text_posts), 2)
         self.assertEqual(
             text_posts[0][1],
-            "esprít\\n12 March 2023 · 10:05\\n\\njoined emoji-only continuation",
+            "esprít\n12 March 2023 · 10:05\n\njoined emoji-only continuation",
         )
         self.assertEqual(text_posts[1][1], "💙")
         self.assertIsNone(text_posts[1][2].get("reply_to"))
-        self.assertIn("Emoji sender\\n12 March 2023", requests[2].message)
+        self.assertIn("Emoji sender\n12 March 2023", requests[2].message)
         self.assertEqual(requests[2].reply_to.reply_to_msg_id, 1008)
 
         self.assertIn("sent=6", output)
