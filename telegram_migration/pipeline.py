@@ -344,8 +344,12 @@ async def _process_message(elem, client, channel, id_map, partial, pending_repli
                         saved.get("multi_media_ids")
                         or saved.get("album_message_ids")
                     )
-                    if saved_ids and len(saved_ids) == len(data["media"]):
-                        destination_id = int(saved_ids[-1])
+                    if not saved_ids or len(saved_ids) != len(data["media"]):
+                        raise RuntimeError(
+                            f"Cannot safely repair mapped multi-media source id={source_id}: "
+                            "the saved destination IDs for every media item are unavailable"
+                        )
+                    destination_id = int(saved_ids[-1])
                 await sending.uploads.ensure_media_caption(
                     client, channel, destination_id, text, entities,
                     source_id=source_id,
