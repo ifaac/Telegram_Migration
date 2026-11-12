@@ -279,6 +279,31 @@ def find_missing_media(msg):
     return missing
 
 
+def sticker_emoji_text(msg_div):
+    """Return fallback emoji labels shown beside standalone sticker files.
+
+    Telegram Desktop exports these in a status element under a media wrapper
+    whose label is explicitly "Sticker". Preserve them as caption text when
+    the sticker asset is sent as an ordinary document.
+    """
+    found = []
+    for _wrap_class, wrap in _media_wrappers(msg_div):
+        export_label = "\n".join(
+            value.strip() for value in wrap.itertext() if value and value.strip()
+        )
+        if not _label_says_sticker(export_label):
+            continue
+        for element in wrap.iter():
+            if not isinstance(element.tag, str):
+                continue
+            if "status" not in css_classes(element):
+                continue
+            value = "".join(element.itertext()).strip()
+            if value:
+                found.append(value)
+    return " ".join(found)
+
+
 def media_note(msg_div):
     wrap = find_first(msg_div, "media_wrap")
     if wrap is None:
