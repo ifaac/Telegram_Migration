@@ -1853,6 +1853,17 @@ class PipelineTests(unittest.TestCase):
                 self.assertNotIn("Forwarded from", caption)
                 self.assertEqual(calls[0][2]["reply_to"], None)
 
+    def test_emoji_only_text_keeps_sender_and_timestamp_above_the_emoji(self):
+        fakes.write_export(self.folder.name, [
+            fakes.message(699, fakes.text("🌸😀"), sender="Alice", minute=9)
+        ])
+        client, _, _ = self.run_once()
+        self.assertEqual(
+            client.texts(),
+            ["Alice\\n12 March 2023 · 10:09\\n\\n🌸😀"],
+        )
+        self.assertEqual(client.kinds("send_file"), [])
+
     def test_forwarded_static_and_video_stickers_keep_attribution_in_media_caption(self):
         # Exercise HTML reconstruction through the actual send_file call for
         # both sticker formats that previously emitted a separate text message.
