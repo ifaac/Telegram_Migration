@@ -716,7 +716,7 @@ class PipelineTests(unittest.TestCase):
         with config.use_settings(self.settings()):
             self.assertEqual(
                 progress.load_id_map(),
-                {"105": 1001, "106": 1002, "107": 1003, "108": 1004},
+                {"105": 1001, "106": 1002, "107": 1004, "108": 1005},
             )
 
     def test_original_forwarded_reply_context_disables_native_forward_for_all_media_kinds(self):
@@ -1916,7 +1916,7 @@ class PipelineTests(unittest.TestCase):
             calls = []
 
             async def send_file(channel, path, **kwargs):
-                calls.append((path, kwargs))
+                calls.append(("send_file", path, kwargs))
                 return type("Sent", (), {"id": 800 + len(calls)})()
 
             async def send_message(channel, text, **kwargs):
@@ -1941,6 +1941,8 @@ class PipelineTests(unittest.TestCase):
             self.assertEqual(len(calls), 3)
             self.assertEqual(calls[0][0], "send_message")
             self.assertIn("Forwarded from Original sender", calls[0][1])
+            self.assertEqual(calls[1][0], "send_file")
+            self.assertEqual(calls[2][0], "send_file")
             self.assertEqual(calls[1][2]["reply_to"], 800)
             self.assertEqual(calls[2][2]["reply_to"], 800)
             self.assertEqual(calls[1][2]["caption"], "")
