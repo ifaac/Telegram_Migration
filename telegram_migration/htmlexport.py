@@ -326,14 +326,23 @@ def extract_message_data(msg_div):
             break
     timestamp = parse_export_date(date_div.get("title")) if date_div is not None else None
 
+    # Desktop export variants do not all place the archive sender as a
+    # direct child of .body. Search the complete message body, but exclude
+    # the forwarded sub-tree: its from_name belongs to the original author,
+    # not to the person who posted/forwarded this archive message.
+    fwd_div = _forwarded_body(msg_div)
     sender = ""
     if config.settings.preserve_sender_names:
-        for child in body:
-            if isinstance(child.tag, str) and "from_name" in css_classes(child):
-                sender = text_without(child, "date")
+        for candidate in body.iter():
+            if not isinstance(candidate.tag, str) or "from_name" not in css_classes(candidate):
+                continue
+            if fwd_div is not None and (
+                candidate is fwd_div or fwd_div in candidate.iterancestors()
+            ):
+                continue
+            sender = text_without(candidate, "date")
+            if sender:
                 break
-
-    fwd_div = _forwarded_body(msg_div)
     forward_name = (
         sanitize_text(_forward_name(fwd_div)).replace("\n", " ").strip()
         if fwd_div is not None else ""
