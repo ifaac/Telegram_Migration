@@ -1932,14 +1932,14 @@ class PipelineTests(unittest.TestCase):
             with patch.object(progress, "save_state"):
                 result = await sending._send_multiple_media(
                     client, "channel",
-                    [("Forwarded from Original sender\n5 November 2026", [])],
+                    [("Forwarded from Original sender\\n5 November 2026", [])],
                     media, None, state, "702",
                 )
             self.assertEqual(result, 801)
             self.assertEqual(len(calls), 2)
             self.assertEqual(calls[0][1]["caption"], "")
             self.assertEqual(calls[1][1]["caption"],
-                             "Forwarded from Original sender\n5 November 2026")
+                             "Forwarded from Original sender\\n5 November 2026")
             self.assertTrue(any(
                 isinstance(attribute, tl.DocumentAttributeSticker)
                 for attribute in calls[0][1]["attributes"]
