@@ -1960,5 +1960,55 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(set(mapped), {"881", "882"})
 
 
+    def test_joined_voice_notes_and_stickers_keep_sender_on_each_media_message(self):
+        voice_paths = ("voice_messages/voice-1.ogg", "voice_messages/voice-2.ogg")
+        sticker_paths = ("stickers/sticker-1.webp", "stickers/sticker-2.tgs")
+        for relative in voice_paths + sticker_paths:
+            fakes.write_file(self.folder.name, relative)
+
+        def voice(path):
+            return (
+                '<div class="media_wrap clearfix">'
+                f'<a class="media clearfix pull_left block_link media_voice_message" href="{path}">'
+                '<div class="body"><div class="title bold">Voice message</div></div>'
+                '</a></div>'
+            )
+
+        def sticker(path):
+            return (
+                '<div class="sticker_wrap">'
+                f'<a class="media clearfix pull_left block_link" href="{path}">'
+                '</a></div>'
+            )
+
+        records = [
+            fakes.message(1, voice(voice_paths[0]), sender="Alice", minute=1),
+            fakes.message(2, voice(voice_paths[1]), sender="", classes="joined", minute=2),
+            fakes.message(3, sticker(sticker_paths[0]), sender="Bob", minute=3),
+            fakes.message(4, sticker(sticker_paths[1]), sender="", classes="joined", minute=4),
+            fakes.message(5, fakes.text("joined emoji-only continuation"), sender="",
+                          classes="joined", minute=5),
+        ]
+        fakes.write_export(self.folder.name, records)
+
+        client, output, _ = self.run_once()
+        media_calls = client.kinds("send_file")
+        self.assertEqual(len(media_calls), 4)
+        captions = [call[2]["caption"] for call in media_calls]
+        self.assertIn("Alice\\n12 March 2023", captions[0])
+        self.assertIn("Alice\\n12 March 2023", captions[1])
+        self.assertIn("Bob\\n12 March 2023", captions[2])
+        self.assertIn("Bob\\n12 March 2023", captions[3])
+        self.assertTrue(captions[0].endswith("Voice message"))
+        self.assertTrue(captions[1].endswith("Voice message"))
+        self.assertEqual(client.texts(), [
+            "Bob\\n12 March 2023 · 10:05\\n\\njoined emoji-only continuation"
+        ])
+        self.assertIn("sent=5", output)
+        self.assertIn("failed=0", output)
+        with config.use_settings(self.settings()):
+            self.assertEqual(set(progress.load_id_map()), {"1", "2", "3", "4", "5"})
+
+
 if __name__ == "__main__":
     unittest.main()
