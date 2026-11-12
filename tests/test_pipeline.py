@@ -1911,7 +1911,7 @@ class PipelineTests(unittest.TestCase):
                 with config.use_settings(self.settings()):
                     self.assertEqual(progress.load_id_map(), {"701": 1001})
 
-    def test_multiple_media_with_sticker_first_attaches_context_to_final_media(self):
+    def test_multiple_media_with_sticker_first_replies_to_context(self):
         async def scenario():
             calls = []
 
@@ -1949,7 +1949,7 @@ class PipelineTests(unittest.TestCase):
             self.assertEqual(calls[2][2]["caption"], "")
             self.assertTrue(any(
                 isinstance(attribute, tl.DocumentAttributeSticker)
-                for attribute in calls[0][1]["attributes"]
+                for attribute in calls[1][2]["attributes"]
             ))
         asyncio.run(scenario())
 
