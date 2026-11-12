@@ -1017,7 +1017,7 @@ class AsyncSendTests(unittest.TestCase):
                 edit_message=edit_message,
             )
             state = {"src": "voice-caption-repair"}
-            caption = "Alice\\n12 March 2023\\n\\nvoice"
+            caption = "Alice\n12 March 2023\n\nvoice"
             with patch.object(progress, "save_state"):
                 result = await sending._send_single_media(
                     client, "channel", [(caption, [])],
@@ -1064,7 +1064,7 @@ class AsyncSendTests(unittest.TestCase):
                 get_messages=get_messages, edit_message=edit_message,
             )
             state = {"src": "sticker-sequence"}
-            caption = "Alice\\n12 March 2023\\n\\nemoji sequence"
+            caption = "Alice\n12 March 2023\n\nemoji sequence"
             with patch.object(sending.uploads, "send_media_item", side_effect=send_media_item), \
                  patch.object(progress, "save_state"):
                 result = await sending._send_individual_media(
