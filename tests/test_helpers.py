@@ -962,7 +962,9 @@ class AsyncSendTests(unittest.TestCase):
             calls = []
             async def send_file(channel, path, **kwargs):
                 calls.append((path, dict(kwargs)))
-                return SimpleNamespace(id=700 + len(calls))
+                return SimpleNamespace(
+                    id=700 + len(calls), message=kwargs.get("caption") or "",
+                )
             client = SimpleNamespace(send_file=send_file)
             state = {"src": "900"}
             data = {
