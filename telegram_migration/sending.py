@@ -78,13 +78,12 @@ def _sent_message_id_from_updates(result, random_id):
 
 async def _send_attribution_reply(client, channel, target_message_id, text,
                                   entities, state, source_id, progress_key):
-    """Reply to a channel post from its linked discussion group.
+    """Attach attribution to a post, using a discussion reply when available.
 
-    The bot cannot use messages.getDiscussionMessage (Telegram marks that
-    method users-only), so this uses MTProto's cross-chat InputReplyToMessage:
-    send into the linked discussion supergroup while naming the source channel
-    and its message ID as the reply target. The random_id is checkpointed
-    before sending so retries can reuse Telegram's deduplication key.
+    For broadcast channels with a linked discussion group, use MTProto's
+    cross-chat InputReplyToMessage reference. If no discussion group exists,
+    publish attribution as a separate channel post. The random_id and chosen
+    route are checkpointed so retries reuse the same destination and ID.
     """
     progress_state = state.setdefault(progress_key, {})
     if progress_state.get("reply_message_id") is not None:
@@ -173,7 +172,7 @@ async def _send_attribution_reply(client, channel, target_message_id, text,
         reply_message_id = _sent_message_id_from_updates(result, random_id)
         if reply_message_id is None:
             raise RuntimeError(
-                "Telegram accepted the discussion reply request but returned no "
+                "Telegram accepted the attribution request but returned no "
                 "message ID; the source message has not been marked complete. "
                 "Restart to retry safely with the same random_id."
             )
