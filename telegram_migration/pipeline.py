@@ -16,7 +16,6 @@ async def process_file(client, channel, path, id_map, partial, pending_replies, 
                       only_pending=False):
     print(("Retrying deferred replies in " if only_pending else "Streaming ") + os.path.basename(path) + " ...")
     ctx["current_export_date"] = None
-    ctx["last_forward_name"] = ""
     with open(path, "rb") as export_file:
         context = etree.iterparse(export_file, events=("end",), tag="div", html=True, encoding="utf-8")
         for _event, elem in context:
@@ -117,7 +116,7 @@ async def _process_message(elem, client, channel, id_map, partial, pending_repli
             date_separator = htmlexport.extract_date_separator(elem)
             if date_separator is not None:
                 ctx["current_export_date"] = date_separator
-                ctx["last_forward_name"] = ""
+                htmlexport.reset_forwarded_context(ctx)
                 return
             data = (htmlexport.extract_service_event_data(
                 elem, ctx.get("current_export_date")
@@ -126,7 +125,7 @@ async def _process_message(elem, client, channel, id_map, partial, pending_repli
             data = htmlexport.extract_message_data(elem)
 
         if data is None:
-            ctx["last_forward_name"] = ""
+            htmlexport.reset_forwarded_context(ctx)
             if "service" in classes and source_id:
                 stats["skipped"] += 1
             mark_completed = bool(source_id)
@@ -427,6 +426,10 @@ async def _run_migration():
     ctx = {
         "inline_custom_emoji_ids": inline_custom_emoji_ids,
         "last_sender": "",
+        "last_forward_name": "",
+        "last_forward_timestamp": None,
+        "last_forward_timestamp_has_time": False,
+        "last_forward_timestamp_has_seconds": False,
         "current_export_date": None,
         "stop": False,
         "source_ids": source_ids,
@@ -451,6 +454,7 @@ async def _run_migration():
             before_completed = len(ctx["processed_source_ids"])
             pending_ctx = dict(ctx)
             pending_ctx["last_sender"] = ""
+            htmlexport.reset_forwarded_context(pending_ctx)
             pending_ctx["stop"] = False
             for path in files:
                 if await process_file(client, channel, path, id_map, partial, pending_replies,
