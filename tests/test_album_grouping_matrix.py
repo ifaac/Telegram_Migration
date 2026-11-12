@@ -1,7 +1,7 @@
-"""Media-agnostic source album grouping regression matrix.
+"""Source album grouping regression matrix.
 
-These tests use synthetic records only. They verify source grouping separately
-from Telegram's narrower native sendMediaGroup compatibility rules.
+These tests use synthetic records and only group media types Telegram can
+represent as native albums. Standalone media must not be inferred as albums.
 """
 import tempfile
 import unittest
@@ -37,10 +37,7 @@ class AlbumGroupingMatrixTests(unittest.TestCase):
             ("video",),
             ("document",),
             ("audio",),
-            ("gif",),
-            ("voice",),
-            ("sticker_static",),
-            ("photo", "video", "gif", "voice", "sticker_static"),
+            ("photo", "video"),
         )
         for count in (2, 3, 8, 10):
             for kinds in media_runs:
@@ -59,14 +56,15 @@ class AlbumGroupingMatrixTests(unittest.TestCase):
                     self.assertTrue(all(not row["body_text"] for row in records[1:]))
 
     def test_non_album_media_types_cannot_start_or_continue_source_groups(self):
-        for kind in ("round_video",):
+        for kind in ("gif", "voice", "round_video", "sticker_static",
+                     "sticker_animated", "sticker_video"):
             with self.subTest(kind=kind):
                 record = self._record(0, kind, first=True)
                 self.assertFalse(album._album_candidate(record, record["sender"]))
 
     def test_repeated_forwarded_reply_target_is_shared_group_context(self):
         first = self._record(0, "photo", first=True)
-        continuation = self._record(1, "voice")
+        continuation = self._record(1, "photo")
         self.assertTrue(album._album_records_compatible(first, continuation))
 
         continuation["forward_reply_src_id"] = "901"
