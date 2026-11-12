@@ -1840,10 +1840,7 @@ class PipelineTests(unittest.TestCase):
                 self.assertIn("5 November 2026 · 19:35:11", kwargs["caption"])
                 self.assertIsNone(kwargs["reply_to"])
                 self.assertTrue(kwargs["force_document"])
-                self.assertTrue(any(
-                    isinstance(attribute, tl.DocumentAttributeSticker)
-                    for attribute in kwargs["attributes"]
-                ))
+                self.assertNotIn("attributes", kwargs)
                 with config.use_settings(self.settings()):
                     self.assertEqual(progress.load_id_map(), {"701": 1001})
 
@@ -1877,10 +1874,8 @@ class PipelineTests(unittest.TestCase):
             self.assertEqual(calls[0][1]["caption"], "")
             self.assertEqual(calls[1][1]["caption"],
                              "Forwarded from Original sender\\n5 November 2026")
-            self.assertTrue(any(
-                isinstance(attribute, tl.DocumentAttributeSticker)
-                for attribute in calls[0][1]["attributes"]
-            ))
+            self.assertTrue(calls[0][1]["force_document"])
+            self.assertNotIn("attributes", calls[0][1])
         asyncio.run(scenario())
 
 
@@ -1994,6 +1989,12 @@ class PipelineTests(unittest.TestCase):
         self.assertIn("Alice\n12 March 2023", captions[1])
         self.assertIn("ㅤㅤㅤㅤㅤㅤ 🗝 ㅤㅤㅤㅤㅤㅤ\n12 March 2023", captions[2])
         self.assertIn("esprít\n12 March 2023", captions[3])
+        self.assertTrue(captions[2].endswith("\n\n👋"))
+        self.assertTrue(captions[3].endswith("\n\n😍"))
+        for call in media_calls[2:]:
+            self.assertTrue(call[2]["force_document"])
+            self.assertEqual(call[2]["mime_type"], "application/x-tgsticker")
+            self.assertNotIn("attributes", call[2])
         self.assertEqual(client.texts(), [
             "esprít\n12 March 2023 · 10:05\n\njoined emoji-only continuation"
         ])
