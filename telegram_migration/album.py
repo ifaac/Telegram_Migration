@@ -121,10 +121,13 @@ def _album_candidate(data, effective_sender):
         return False
     if data.get("media_note"):
         return False
-    # A round-video note is its own Telegram message type, not an album
-    # continuation. Telegram Desktop may still apply the visual "joined" class
-    # to adjacent notes, so never infer a source album from that layout marker.
-    if data["media"][0][1] == "round_video":
+    # Telegram Desktop's "joined" class groups adjacent messages visually; it
+    # does not mean those messages were sent as a media album. Only media types
+    # Telegram can actually place in a native album are eligible here. In
+    # particular, voice notes and stickers must remain separate messages so
+    # each one receives its own sender/date caption instead of attaching the
+    # whole run's attribution only to the final item.
+    if data["media"][0][1] not in {"photo", "video", "document", "audio"}:
         return False
     if data.get("is_forwarded") and not data.get("forward_name"):
         return False
