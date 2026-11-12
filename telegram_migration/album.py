@@ -386,8 +386,27 @@ async def _verify_album_delivery(client, channel, messages, captions,
             "been marked complete."
         )
 
+    # Do not trust the Message objects returned by send_file(): verify the
+    # independently stored destination records, just as for single-media sends.
+    get_messages = getattr(client, "get_messages", None)
+    if not callable(get_messages):
+        raise RuntimeError(
+            f"Cannot independently verify stored album captions for source id={source_id}; "
+            "the Telegram client cannot fetch destination messages"
+        )
+    stored_messages = []
+    for message in messages:
+        stored = await get_messages(channel, ids=message.id)
+        stored_list = await _album_message_list(stored)
+        if not stored_list or stored_list[0] is None:
+            raise RuntimeError(
+                f"Cannot retrieve destination album item id={message.id} "
+                f"for source id={source_id}; refusing to assume its caption was saved"
+            )
+        stored_messages.append(stored_list[0])
+
     for index, (message, expected, entities) in enumerate(
-        zip(messages, captions, caption_entities), start=1
+        zip(stored_messages, captions, caption_entities), start=1
     ):
         actual = getattr(message, "message", None)
         if actual is None:
