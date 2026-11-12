@@ -13,25 +13,66 @@ from .constants import STICKER_KINDS
 
 
 def _sticker_upload_options(path, kind):
-    """Send exported sticker assets as ordinary caption-capable documents.
+    """Build MTProto document attributes for a native Telegram sticker.
 
-    Deliberately omit DocumentAttributeSticker and video/sticker attributes:
-    Telegram must treat these as files, not native stickers, so the sender/date
-    caption is part of the same visible document message.
+    The sender/date caption is still passed separately to send_file(). Telegram's
+    messages.sendMedia request carries that caption in its message field while
+    these attributes identify the uploaded document as a sticker.
     """
     ext = os.path.splitext(path)[1].casefold()
-    options = {"force_document": True}
+    sticker_attr_cls = getattr(tl, "DocumentAttributeSticker", None)
+    empty_set_cls = getattr(tl, "InputStickerSetEmpty", None)
+    if sticker_attr_cls is None or empty_set_cls is None:
+        raise RuntimeError(
+            "This Telethon version lacks sticker upload attributes; upgrade Telethon."
+        )
+
+    attributes = [sticker_attr_cls(alt="🙂", stickerset=empty_set_cls())]
+    options = {"attributes": attributes}
 
     if kind == "sticker_animated" or ext == ".tgs":
         options["mime_type"] = "application/x-tgsticker"
     elif kind == "sticker_video" or ext == ".webm":
         options["mime_type"] = "video/webm"
-    elif ext == ".webp":
-        options["mime_type"] = "image/webp"
-    elif ext == ".png":
-        options["mime_type"] = "image/png"
+        metadata = mediatools.probe_video_metadata(path) or {}
+        width = int(metadata.get("width") or 512)
+        height = int(metadata.get("height") or 512)
+        duration = float(metadata.get("duration") or 1.0)
+        video_attr_cls = getattr(tl, "DocumentAttributeVideo", None)
+        if video_attr_cls is None:
+            raise RuntimeError(
+                "This Telethon version lacks video attributes required for video stickers."
+            )
+        try:
+            video_attr = video_attr_cls(
+                duration=duration, w=width, h=height,
+                supports_streaming=False, nosound=True,
+            )
+        except TypeError:
+            # Compatibility with older Telethon schema layers that lack `nosound`.
+            video_attr = video_attr_cls(
+                duration=duration, w=width, h=height,
+                supports_streaming=False,
+            )
+        attributes.append(video_attr)
+        if not metadata:
+            print(
+                f"    warning: could not read video metadata for sticker "
+                f"{os.path.basename(path)}; using 512x512 / 1s fallback"
+            )
+        options["nosound_video"] = True
+    elif ext in (".webp", ".png"):
+        # Static sticker files are image files by extension. Force the document
+        # media path so Telethon does not upload them as ordinary photos.
+        options["force_document"] = True
+        options["mime_type"] = "image/webp" if ext == ".webp" else "image/png"
     else:
-        # Preserve unfamiliar sticker-directory assets as ordinary files too.
+        print(
+            f"    warning: unknown sticker format {ext or '(no extension)'}; "
+            "sending as a document without a native sticker guarantee"
+        )
+        options.pop("attributes", None)
+        options["force_document"] = True
         options["mime_type"] = None
 
     return options
