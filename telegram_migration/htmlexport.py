@@ -417,14 +417,42 @@ def infer_media_groups(files, inline_emoji_ids=None):
     return infer(files, inline_emoji_ids)
 
 
+def reset_forwarded_context(context):
+    """Clear original-author context at a real boundary in the export."""
+    context["last_forward_name"] = ""
+    context["last_forward_timestamp"] = None
+    context["last_forward_timestamp_has_time"] = False
+    context["last_forward_timestamp_has_seconds"] = False
+
+
 def inherit_forwarded_sender(data, context):
-    """Restore a forwarded author omitted from joined continuation messages."""
+    """Restore original author and date omitted from joined continuation messages."""
     if not data.get("is_forwarded"):
-        context["last_forward_name"] = ""
-    elif data.get("forward_name"):
+        reset_forwarded_context(context)
+        return
+
+    if data.get("forward_name"):
         context["last_forward_name"] = data["forward_name"]
-    elif data.get("joined") and context.get("last_forward_name"):
+        context["last_forward_timestamp"] = data.get("forward_timestamp")
+        context["last_forward_timestamp_has_time"] = bool(
+            data.get("forward_timestamp_has_time")
+        )
+        context["last_forward_timestamp_has_seconds"] = bool(
+            data.get("forward_timestamp_has_seconds")
+        )
+        return
+
+    if data.get("joined") and context.get("last_forward_name"):
         data["forward_name"] = context["last_forward_name"]
-        data["forward_header"] = f"Forwarded from {data['forward_name']}\n"
-    else:
-        context["last_forward_name"] = ""
+        if data.get("forward_timestamp") is None:
+            data["forward_timestamp"] = context.get("last_forward_timestamp")
+            data["forward_timestamp_has_time"] = context.get(
+                "last_forward_timestamp_has_time", False
+            )
+            data["forward_timestamp_has_seconds"] = context.get(
+                "last_forward_timestamp_has_seconds", False
+            )
+        data["forward_header"] = f"Forwarded from {data['forward_name']}\\n"
+        return
+
+    reset_forwarded_context(context)
