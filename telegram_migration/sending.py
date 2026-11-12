@@ -4,6 +4,7 @@ import asyncio
 import os
 
 from telethon.errors import FloodWaitError
+from telethon.tl import types as tl
 
 from . import album, config, exportmedia, formatfallback, progress, uploads
 from .attribution import (
