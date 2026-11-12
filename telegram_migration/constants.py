@@ -19,10 +19,10 @@ MIN_TEXT_LIMIT = 4
 # messages.html, messages2.html, ... in a Telegram Desktop HTML export.
 HTML_FILE_PATTERN = r"^messages(\d*)\.html$"
 
-# Exported sticker assets are sent individually as ordinary documents, not
-# native stickers, so their sender/date attribution can be carried as a caption.
+# Sticker files use their native sticker document attributes. Sender/date context
+# is carried through the existing caption path except for TGS attribution replies.
 STICKER_KINDS = ("sticker_static", "sticker_animated", "sticker_video", "sticker_unknown")
 # Every currently supported media type has a caption-capable send path:
-# voice notes use voice_note=True; sticker assets use ordinary document uploads;
+# voice notes use voice_note=True; sticker assets retain sticker attributes;
 # captioned round videos are uploaded as regular videos.
 NO_CAPTION_KINDS = ()
