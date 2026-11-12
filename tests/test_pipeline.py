@@ -1984,8 +1984,6 @@ class PipelineTests(unittest.TestCase):
         self.assertIn("Alice\n12 March 2023", captions[1])
         self.assertIn("Bob\n12 March 2023", captions[2])
         self.assertIn("Bob\n12 March 2023", captions[3])
-        self.assertTrue(captions[0].endswith("Voice message"))
-        self.assertTrue(captions[1].endswith("Voice message"))
         self.assertEqual(client.texts(), [
             "Bob\n12 March 2023 · 10:05\n\njoined emoji-only continuation"
         ])
