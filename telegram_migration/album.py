@@ -428,27 +428,21 @@ async def _verify_album_delivery(client, channel, messages, captions,
                 f"(source id={source_id}); no edit_message method is available"
             )
         try:
-            edited = await edit_message(
+            await edit_message(
                 channel, message.id, expected,
                 formatting_entities=entities or None, parse_mode=None,
             )
         except MessageNotModifiedError:
-            # This is a positive server response: Telegram rejected the edit
-            # specifically because the requested caption and formatting were
-            # already present. The locally re-fetched TL object can encode
-            # optional flags differently (notably blockquote.collapsed), so
-            # comparing its raw entities would turn a confirmed no-op into a
-            # false failure and cause the whole album to be retried.
-            continue
+            # Still fetch the stored message below; do not trust the local
+            # object or the no-op response as proof of persisted caption text.
+            pass
 
-        edited_text = getattr(edited, "message", None) if edited is not None else None
-        if edited_text is None:
-            get_messages = getattr(client, "get_messages", None)
-            if callable(get_messages):
-                refreshed = await get_messages(channel, ids=message.id)
-                refreshed_list = await _album_message_list(refreshed)
-                if refreshed_list:
-                    edited_text = getattr(refreshed_list[0], "message", None)
+        refreshed = await get_messages(channel, ids=message.id)
+        refreshed_list = await _album_message_list(refreshed)
+        edited_text = (
+            getattr(refreshed_list[0], "message", None)
+            if refreshed_list else None
+        )
         if edited_text != expected:
             raise RuntimeError(
                 f"Caption verification failed for album item {index} "
