@@ -957,16 +957,13 @@ class AsyncSendTests(unittest.TestCase):
         ):
             self.assertFalse(exportmedia.album_compatible(media))
 
-    def test_inferred_incompatible_media_group_sends_prefix_and_media_replies(self):
+    def test_inferred_incompatible_media_group_sends_in_order_and_returns_all_ids(self):
         async def scenario():
             calls = []
-            async def send_message(channel, text, **kwargs):
-                calls.append(("send_message", text, dict(kwargs)))
-                return SimpleNamespace(id=700 + len(calls))
             async def send_file(channel, path, **kwargs):
-                calls.append(("send_file", path, dict(kwargs)))
+                calls.append((path, dict(kwargs)))
                 return SimpleNamespace(id=700 + len(calls))
-            client = SimpleNamespace(send_file=send_file, send_message=send_message)
+            client = SimpleNamespace(send_file=send_file)
             state = {"src": "900"}
             data = {
                 "_inferred_album": True,
@@ -982,18 +979,12 @@ class AsyncSendTests(unittest.TestCase):
                     client, "channel", [("", [])], media, None, None,
                     state, None, "900", data,
                 )
-            self.assertEqual(result, [702, 703])
-            self.assertEqual([call[0] for call in calls],
-                             ["send_message", "send_file", "send_file"])
-            self.assertEqual(calls[0][1], "source caption")
-            self.assertEqual(calls[1][1], media[0][0])
-            self.assertEqual(calls[2][1], media[1][0])
-            self.assertEqual(calls[1][2]["reply_to"], 701)
-            self.assertEqual(calls[2][2]["reply_to"], 701)
-            self.assertEqual(calls[1][2]["caption"], "")
-            self.assertTrue(calls[2][2]["voice_note"])
-            self.assertEqual(calls[2][2]["caption"], "")
-            self.assertEqual(state["multi_media_ids"], [702, 703])
+            self.assertEqual(result, [701, 702])
+            self.assertEqual([call[0] for call in calls], [item[0] for item in media])
+            self.assertEqual(calls[0][1]["caption"], "")
+            self.assertTrue(calls[1][1]["voice_note"])
+            self.assertEqual(calls[1][1]["caption"], "source caption")
+            self.assertEqual(state["multi_media_ids"], [701, 702])
         asyncio.run(scenario())
 
     def test_gif_upload_uses_inline_animation_metadata_for_supported_gif_files(self):
