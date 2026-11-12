@@ -1816,6 +1816,43 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual([row["msg_id"] for row in groups["12"]], ["12", "13"])
 
 
+    def test_every_standalone_media_kind_keeps_its_sender_and_timestamp_in_caption(self):
+        cases = [
+            ("audio", "audio_files/track.mp3",
+             '<a class="media_audio_file" href="audio_files/track.mp3"></a>'),
+            ("voice", "voice_messages/note.ogg",
+             '<a class="media_voice_message" href="voice_messages/note.ogg"></a>'),
+            ("sticker", "stickers/face.webp",
+             '<a href="stickers/face.webp"></a>'),
+            ("photo", "photos/photo.jpg",
+             '<a class="photo_wrap" href="photos/photo.jpg"><img src="photos/photo.jpg"/></a>'),
+            ("video", "video_files/clip.mp4",
+             '<a class="video_file_wrap" href="video_files/clip.mp4"></a>'),
+            ("document", "files/archive.bin",
+             '<a class="media_file" href="files/archive.bin"></a>'),
+        ]
+        for index, (kind, relative, anchor_html) in enumerate(cases, start=1):
+            with self.subTest(kind=kind):
+                self.folder.cleanup()
+                self.folder = tempfile.TemporaryDirectory()
+                self.addCleanup(self.folder.cleanup)
+                fakes.write_file(self.folder.name, relative)
+                media = (
+                    '<div class="media_wrap clearfix">' + anchor_html + '</div>'
+                )
+                fakes.write_export(self.folder.name, [
+                    fakes.message(700 + index, media, sender="Alice", minute=index * 5)
+                ])
+                client, _, _ = self.run_once()
+                self.assertEqual(client.kinds("send_message"), [])
+                calls = client.kinds("send_file")
+                self.assertEqual(len(calls), 1)
+                caption = calls[0][2]["caption"]
+                self.assertIn("Alice", caption)
+                self.assertIn("12 March 2023 · 10:", caption)
+                self.assertTrue(caption.endswith("\\n\\n"))
+                self.assertEqual(calls[0][2]["reply_to"], None)
+
     def test_forwarded_static_and_video_stickers_keep_attribution_in_media_caption(self):
         # Exercise HTML reconstruction through the actual send_file call for
         # both sticker formats that previously emitted a separate text message.
