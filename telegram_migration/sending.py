@@ -410,7 +410,7 @@ async def _do_send(client, channel, chunks, media, reply_to, forward_source,
             client, channel, sequence_chunks, media, reply_to, state,
             source_id,
         )
-        if continuation:
+        if continuation and not any(kind in NO_CAPTION_KINDS for _path, kind in media):
             last_media_id = state["multi_media_ids"][-1]
             await _send_text_chunks(
                 client, channel, continuation, last_media_id, state,
