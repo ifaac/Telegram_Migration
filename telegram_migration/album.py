@@ -157,7 +157,7 @@ def _album_records_compatible(left, right):
     # not a boundary. A different reply target on a later item is a boundary.
     left_reply = left.get("forward_reply_src_id") if left.get("is_forwarded") else left.get("reply_src_id")
     right_reply = right.get("forward_reply_src_id") if right.get("is_forwarded") else right.get("reply_src_id")
-    if right_reply and right_reply != left_reply:
+    if right_reply != left_reply:
         return False
 
     left_caption = _caption_signature(left)
