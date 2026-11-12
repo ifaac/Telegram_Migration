@@ -6,6 +6,70 @@ import re
 from telethon.tl import types as tl
 
 
+_EMOJI_BASE_RANGES = (
+    (0x00A9, 0x00A9), (0x00AE, 0x00AE), (0x203C, 0x3299),
+    (0x1F000, 0x1FAFF), (0x1FC00, 0x1FFFD),
+)
+_EMOJI_IGNORABLE = {
+    0x200D, 0xFE0E, 0xFE0F, 0x20E3,
+    *range(0x1F3FB, 0x1F400), *range(0xE0020, 0xE0080),
+}
+
+
+def is_emoji_only_text(value):
+    """Return True only when non-whitespace content consists entirely of emoji.
+
+    Handles common emoji presentation selectors, ZWJ sequences, skin tones,
+    regional-indicator flags and keycap sequences without adding a runtime
+    dependency. It is intentionally conservative: ordinary digits, symbols,
+    punctuation and mixed text are not classified as emoji-only.
+    """
+    value = str(value or "").strip()
+    if not value:
+        return False
+
+    has_emoji = False
+    index = 0
+    while index < len(value):
+        char = value[index]
+        codepoint = ord(char)
+
+        if char.isspace() or codepoint in _EMOJI_IGNORABLE:
+            index += 1
+            continue
+
+        # Keycaps are the only emoji sequences whose base is ASCII.
+        if char in "#*0123456789":
+            end = index + 1
+            if end < len(value) and ord(value[end]) == 0xFE0F:
+                end += 1
+            if end < len(value) and ord(value[end]) == 0x20E3:
+                has_emoji = True
+                index = end + 1
+                continue
+            return False
+
+        # Regional indicator pairs form flag emoji. A lone regional indicator
+        # is not accepted as a complete visible emoji.
+        if 0x1F1E6 <= codepoint <= 0x1F1FF:
+            if index + 1 >= len(value) or not (
+                0x1F1E6 <= ord(value[index + 1]) <= 0x1F1FF
+            ):
+                return False
+            has_emoji = True
+            index += 2
+            continue
+
+        if any(start <= codepoint <= end for start, end in _EMOJI_BASE_RANGES):
+            has_emoji = True
+            index += 1
+            continue
+
+        return False
+
+    return has_emoji
+
+
 def u16len(s):
     """Length in UTF-16 code units (Telegram's unit for entity offsets)."""
     return len(s.encode("utf-16-le")) // 2
