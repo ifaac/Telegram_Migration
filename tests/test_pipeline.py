@@ -1923,19 +1923,27 @@ class PipelineTests(unittest.TestCase):
     def test_multiple_media_with_sticker_first_attaches_context_to_final_media(self):
         async def scenario():
             calls = []
+            stored = {}
 
             async def send_file(channel, path, **kwargs):
                 calls.append((path, kwargs))
-                return type("Sent", (), {
+                message = type("Sent", (), {
                     "id": 800 + len(calls),
                     "message": kwargs.get("caption") or "",
+                    "text": kwargs.get("caption") or "",
                 })()
+                stored[message.id] = message
+                return message
+
+            async def get_messages(channel, ids=None):
+                return stored.get(int(ids)) if ids is not None else None
 
             async def send_message(channel, text, **kwargs):
                 raise AssertionError("caption must not be emitted as a separate text message")
 
             client = type("Client", (), {})()
             client.send_file = send_file
+            client.get_messages = get_messages
             client.send_message = send_message
             state = {"src": "702"}
             media = [
