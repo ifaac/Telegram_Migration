@@ -56,7 +56,7 @@ async def ensure_media_caption(client, channel, message, caption, entities, sour
 
     if _message_text(edited) == caption:
         return edited
-    refreshed = await _get_message_by_id(client, channel, message_id)
+    refreshed = await get_message_by_id(client, channel, message_id)
     if _message_text(refreshed) == caption:
         return refreshed
     raise RuntimeError(
