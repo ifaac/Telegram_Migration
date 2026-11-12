@@ -10,7 +10,7 @@ from telethon.tl import types as tl
 
 from . import album, bigfiles, cli, config, customemoji, htmlexport, mediatools, progress, reaction_archive, replylinks, sending, uploads
 from .htmlutil import css_classes
-from .textutil import compose_message, compose_message_header, format_archive_timestamp, split_with_entities, strip_with_entities, u16len
+from .textutil import compose_message, compose_message_header, format_archive_timestamp, is_emoji_only_text, split_with_entities, strip_with_entities, u16len
 
 async def process_file(client, channel, path, id_map, partial, pending_replies, stats, ctx,
                       only_pending=False):
@@ -223,6 +223,17 @@ async def _process_message(elem, client, channel, id_map, partial, pending_repli
             )
         else:
             header = compose_message_header(timestamp, data["sender"])
+        if (len(data.get("media") or []) == 1:
+            media_kind = data["media"][0][1]
+            if media_kind.startswith("sticker_"):
+                data["_sticker_attribution_reply"] = True
+
+        if (not data.get("media") and not data.get("is_forwarded")
+                and not data.get("service_event")
+                and is_emoji_only_text(data.get("body_text", ""))):
+            data["_emoji_only_attribution_reply"] = True
+            data["_emoji_reply_header"] = header
+
         body_text = data["body_text"]
         body_entities = list(data["body_entities"])
         is_forwarded = bool(data.get("is_forwarded"))
@@ -287,6 +298,10 @@ async def _process_message(elem, client, channel, id_map, partial, pending_repli
             )
             text, entities = strip_with_entities(text, entities)
             preview_text, preview_entities = text, entities
+
+        if data.get("_sticker_attribution_reply"):
+            data["_attribution_reply_text"] = text
+            data["_attribution_reply_entities"] = entities
 
         oversize = bigfiles.find_oversize_media(data["media"])
         if oversize:
