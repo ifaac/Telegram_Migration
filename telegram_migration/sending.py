@@ -276,6 +276,17 @@ async def _send_individual_media(client, channel, chunks, media, reply_to, state
         )
         state["multi_media_ids"].append(sent_msg.id)
         progress.save_state(state["src"], state)
+        if caption:
+            await uploads.ensure_media_caption(
+                client, channel, sent_msg.id, caption, entities,
+                source_id=source_id, message=sent_msg,
+            )
+    # On resume, also verify the caption on the final already-uploaded item.
+    if first_text:
+        await uploads.ensure_media_caption(
+            client, channel, state["multi_media_ids"][-1],
+            first_text, first_ents, source_id=source_id,
+        )
     state["album_id"] = state["multi_media_ids"][0]
     progress.save_state(state["src"], state)
     return False
@@ -331,6 +342,15 @@ async def _send_single_media(client, channel, chunks, media, reply_to, state, so
         )
         state["media_id"] = media_msg.id
         progress.save_state(state["src"], state)
+        await uploads.ensure_media_caption(
+            client, channel, media_msg.id, first_text, first_ents,
+            source_id=source_id, message=media_msg,
+        )
+    else:
+        await uploads.ensure_media_caption(
+            client, channel, state["media_id"], first_text, first_ents,
+            source_id=source_id,
+        )
     if rest:
         await _send_text_chunks(client, channel, rest, state["media_id"],
                                 state, "tail_prog", source_id)
