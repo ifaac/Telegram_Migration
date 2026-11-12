@@ -279,13 +279,18 @@ def find_missing_media(msg):
     return missing
 
 
-def sticker_emoji_text(msg_div):
-    """Return fallback emoji labels shown beside standalone sticker files.
+def sticker_emoji_text(msg_div, media=None):
+    """Return the fallback emoji label for an exported TGS sticker only.
 
-    Telegram Desktop exports these in a status element under a media wrapper
-    whose label is explicitly "Sticker". Preserve them as caption text when
-    the sticker asset is sent as an ordinary document.
+    Static WebP and video WebM sticker messages retain their original caption
+    and upload paths; only TGS sticker attribution carries this fallback label.
     """
+    if not any(
+        kind == "sticker_animated" and str(path).casefold().endswith(".tgs")
+        for path, kind in (media or [])
+    ):
+        return ""
+
     found = []
     for _wrap_class, wrap in _media_wrappers(msg_div):
         export_label = "\n".join(
