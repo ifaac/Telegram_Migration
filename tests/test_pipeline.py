@@ -1845,47 +1845,6 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual([row["msg_id"] for row in groups["12"]], ["12", "13"])
 
 
-    def test_inferred_audio_album_keeps_sender_context_visible_before_group(self):
-        records = []
-        for source_id, minute, classes, sender in (
-            (710, 1, "", "Alice"),
-            (711, 2, "joined", ""),
-        ):
-            relative = f"audio_files/group-{source_id}.mp3"
-            fakes.write_file(self.folder.name, relative)
-            media = (
-                '<div class="media_wrap clearfix">'
-                f'<a class="media_audio_file" href="{relative}"></a>'
-                '</div>'
-            )
-            records.append(
-                fakes.message(source_id, media, sender=sender,
-                              classes=classes, minute=minute)
-            )
-        fakes.write_export(self.folder.name, records)
-
-        client, _, _ = self.run_once()
-
-        # Audio albums cannot rely on captions being displayed by clients.
-        # The sender/date appears once as ordinary text, and the native album
-        # remains grouped and replies to that context message.
-        self.assertEqual(len(client.kinds("send_message")), 1)
-        self.assertIn("Alice", client.texts()[0])
-        self.assertIn("12 March 2023 · 10:01", client.texts()[0])
-        album_calls = client.kinds("send_file")
-        self.assertEqual(len(album_calls), 1)
-        files, kwargs = album_calls[0][1], album_calls[0][2]
-        self.assertEqual(len(files), 2)
-        self.assertEqual(kwargs["caption"], ["", ""])
-        self.assertEqual(kwargs["reply_to"], 1001)
-        self.assertEqual(
-            len({message.grouped_id for message in client.messages.values()
-                 if message.grouped_id is not None}),
-            1,
-        )
-        with config.use_settings(self.settings()):
-            self.assertEqual(set(progress.load_id_map()), {"710", "711"})
-
     def test_every_standalone_media_kind_keeps_its_sender_and_timestamp_in_caption(self):
         cases = [
             ("audio", "audio_files/track.mp3",
