@@ -1960,5 +1960,59 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(set(mapped), {"881", "882"})
 
 
+    def test_sender_attribution_survives_nested_sender_markup_for_emoji_audio_and_voice(self):
+        # Some Desktop message layouts nest the chat sender one level deeper
+        # than the usual direct child of .body. Sender lookup must not depend
+        # on whether the message contains text, audio, or a voice note.
+        records = [
+            (
+                '<div class="message default clearfix" id="message910">'
+                '<div class="body"><div class="message_content">'
+                '<div class="from_name">Emoji sender</div>'
+                '<div class="text">😀</div>'
+                '</div><div class="pull_right date details" '
+                'title="12.03.2023 10:10:00 UTC+02:00">10:10</div></div></div>'
+            ),
+            (
+                '<div class="message default clearfix" id="message911">'
+                '<div class="body"><div class="message_content">'
+                '<div class="from_name">Audio sender</div>'
+                '<div class="media_wrap clearfix">'
+                '<a class="audio_file_wrap media_audio_file" href="audio_files/track.mp3"></a>'
+                '</div></div><div class="pull_right date details" '
+                'title="12.03.2023 10:11:00 UTC+02:00">10:11</div></div></div>'
+            ),
+            (
+                '<div class="message default clearfix" id="message912">'
+                '<div class="body"><div class="message_content">'
+                '<div class="from_name">Voice sender</div>'
+                '<div class="media_wrap clearfix">'
+                '<a class="voice_message" href="voice_messages/voice.ogg"></a>'
+                '</div></div><div class="pull_right date details" '
+                'title="12.03.2023 10:12:00 UTC+02:00">10:12</div></div></div>'
+            ),
+        ]
+        fakes.write_file(self.folder.name, "audio_files/track.mp3")
+        fakes.write_file(self.folder.name, "voice_messages/voice.ogg")
+        fakes.write_export(self.folder.name, records)
+
+        client, output, _ = self.run_once()
+
+        self.assertEqual(
+            client.texts(),
+            ["Emoji sender\\n12 March 2023 · 10:10\\n\\n😀"],
+        )
+        media_calls = client.kinds("send_file")
+        self.assertEqual(len(media_calls), 2)
+        audio_caption = media_calls[0][2]["caption"]
+        voice_caption = media_calls[1][2]["caption"]
+        self.assertIn("Audio sender\\n12 March 2023", audio_caption)
+        self.assertIn("Voice sender\\n12 March 2023", voice_caption)
+        self.assertFalse(media_calls[0][2].get("voice_note", False))
+        self.assertTrue(media_calls[1][2].get("voice_note", False))
+        self.assertIn("sent=3", output)
+        self.assertIn("failed=0", output)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -326,14 +326,21 @@ def extract_message_data(msg_div):
             break
     timestamp = parse_export_date(date_div.get("title")) if date_div is not None else None
 
+    # Resolve the forwarded subtree before the outer sender. Desktop normally
+    # places the sender directly under .body, but some media/message layouts
+    # nest it inside an additional wrapper. Search the whole body while
+    # excluding the forwarded payload, whose author is not the chat sender.
+    fwd_div = _forwarded_body(msg_div)
     sender = ""
     if config.settings.preserve_sender_names:
-        for child in body:
-            if isinstance(child.tag, str) and "from_name" in css_classes(child):
-                sender = text_without(child, "date")
-                break
-
-    fwd_div = _forwarded_body(msg_div)
+        forwarded_nodes = set(fwd_div.iter()) if fwd_div is not None else set()
+        for candidate in body.iter():
+            if candidate is body or candidate in forwarded_nodes:
+                continue
+            if isinstance(candidate.tag, str) and "from_name" in css_classes(candidate):
+                sender = text_without(candidate, "date")
+                if sender:
+                    break
     forward_name = (
         sanitize_text(_forward_name(fwd_div)).replace("\n", " ").strip()
         if fwd_div is not None else ""
