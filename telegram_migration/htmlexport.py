@@ -417,14 +417,63 @@ def infer_media_groups(files, inline_emoji_ids=None):
     return infer(files, inline_emoji_ids)
 
 
+def reset_forwarded_context(context):
+    """Clear forwarded-author context at a genuine message-stream boundary."""
+    context["last_forward_name"] = ""
+    context["last_forward_timestamp"] = None
+    context["last_forward_timestamp_has_time"] = False
+    context["last_forward_timestamp_has_seconds"] = False
+
+
 def inherit_forwarded_sender(data, context):
-    """Restore a forwarded author omitted from joined continuation messages."""
+    """Carry a forwarded author and original timestamp onto joined rows."""
+    context.setdefault("last_forward_name", "")
+    context.setdefault("last_forward_timestamp", None)
+    context.setdefault("last_forward_timestamp_has_time", False)
+    context.setdefault("last_forward_timestamp_has_seconds", False)
+
     if not data.get("is_forwarded"):
-        context["last_forward_name"] = ""
-    elif data.get("forward_name"):
-        context["last_forward_name"] = data["forward_name"]
-    elif data.get("joined") and context.get("last_forward_name"):
+        reset_forwarded_context(context)
+        return
+
+    name = data.get("forward_name") or ""
+    timestamp = data.get("forward_timestamp")
+    if name:
+        same_author = name == context.get("last_forward_name")
+        context["last_forward_name"] = name
+        if timestamp is not None:
+            context["last_forward_timestamp"] = timestamp
+            context["last_forward_timestamp_has_time"] = bool(
+                data.get("forward_timestamp_has_time")
+            )
+            context["last_forward_timestamp_has_seconds"] = bool(
+                data.get("forward_timestamp_has_seconds")
+            )
+        elif data.get("joined") and same_author:
+            data["forward_timestamp"] = context.get("last_forward_timestamp")
+            data["forward_timestamp_has_time"] = context.get(
+                "last_forward_timestamp_has_time", False
+            )
+            data["forward_timestamp_has_seconds"] = context.get(
+                "last_forward_timestamp_has_seconds", False
+            )
+        else:
+            context["last_forward_timestamp"] = None
+            context["last_forward_timestamp_has_time"] = False
+            context["last_forward_timestamp_has_seconds"] = False
+        return
+
+    if data.get("joined") and context.get("last_forward_name"):
         data["forward_name"] = context["last_forward_name"]
+        if timestamp is None:
+            data["forward_timestamp"] = context.get("last_forward_timestamp")
+            data["forward_timestamp_has_time"] = context.get(
+                "last_forward_timestamp_has_time", False
+            )
+            data["forward_timestamp_has_seconds"] = context.get(
+                "last_forward_timestamp_has_seconds", False
+            )
         data["forward_header"] = f"Forwarded from {data['forward_name']}\n"
-    else:
-        context["last_forward_name"] = ""
+        return
+
+    reset_forwarded_context(context)
