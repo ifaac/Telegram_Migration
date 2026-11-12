@@ -155,39 +155,14 @@ async def _send_album(client, channel, chunks, media, reply_to, state, source_id
     first_text, first_ents = chunks[0]
     files = [path for path, _kind in media]
     inferred_album = album_caption is not None
-    separate_context = any(kind in NO_CAPTION_KINDS for _path, kind in media)
-    media_reply_to = reply_to
-    if separate_context:
-        # Some media types (notably audio-file albums) do not display captions
-        # reliably in Telegram clients. Put the complete archive context in
-        # ordinary text messages before the media, then reply the media to it.
-        if inferred_album:
-            context_chunks = split_with_entities(
-                album_caption or "", album_caption_entities or [],
-                config.settings.text_limit, config.settings.text_limit,
-            )
-        else:
-            context_chunks = chunks
-        media_reply_to = await _send_media_context(
-            client, channel, context_chunks, reply_to, state, source_id,
-        )
-
     if inferred_album:
-        if separate_context:
-            captions = [""] * len(files)
-            caption_entities = [[] for _ in files]
-        else:
-            # Put the complete message context on the final item of the group.
-            # Telegram accepts one caption per album item; all earlier slots stay
-            # empty so the caption follows the entire media sequence.
-            final_caption, _continuation = inferred_album_caption_parts(
-                album_caption, album_caption_entities,
-            )
-            captions = [""] * (len(files) - 1) + [final_caption[0]]
-            caption_entities = [[] for _ in files[:-1]] + [final_caption[1]]
-    elif separate_context:
-        captions = [""] * len(files)
-        caption_entities = [[] for _ in files]
+        # Keep sender/date and the complete source caption on the final item
+        # of the native album. No separate sender/prefix reply is created.
+        final_caption, _continuation = inferred_album_caption_parts(
+            album_caption, album_caption_entities,
+        )
+        captions = [""] * (len(files) - 1) + [final_caption[0]]
+        caption_entities = [[] for _ in files[:-1]] + [final_caption[1]]
     else:
         captions = ([""] * (len(files) - 1) + [first_text]
                     if captions is None else list(captions))
@@ -208,7 +183,7 @@ async def _send_album(client, channel, chunks, media, reply_to, state, source_id
     ]
 
     async def send_group_caption(album_message_id):
-        if inferred_album and not separate_context:
+        if inferred_album:
             await send_inferred_album_caption(
                 client, channel, album_caption, album_caption_entities,
                 state, source_id, album_message_id,
@@ -238,7 +213,7 @@ async def _send_album(client, channel, chunks, media, reply_to, state, source_id
             "album_id and no complete album_message_ids; manual review is required"
         )
 
-    album_kwargs = {"caption": captions, "reply_to": media_reply_to, "parse_mode": None}
+    album_kwargs = {"caption": captions, "reply_to": reply_to, "parse_mode": None}
     if force_document:
         album_kwargs["force_document"] = True
     if any(safe_entity_rows):
@@ -400,7 +375,7 @@ async def _do_send(client, channel, chunks, media, reply_to, forward_source,
         # The source records still form one group even when Telegram cannot
         # represent the media combination as a native album. Preserve every
         # item in source order, attach the caption to the first captionable
-        # item (or as a prefix for voice notes), and checkpoint each
+        # item, and checkpoint each
         # destination ID so an interrupted sequence resumes without duplicates.
         first_caption, continuation = inferred_album_caption_parts(
             album_caption, album_caption_entities,
@@ -410,7 +385,7 @@ async def _do_send(client, channel, chunks, media, reply_to, forward_source,
             client, channel, sequence_chunks, media, reply_to, state,
             source_id,
         )
-        if continuation and not any(kind in NO_CAPTION_KINDS for _path, kind in media):
+        if continuation:
             last_media_id = state["multi_media_ids"][-1]
             await _send_text_chunks(
                 client, channel, continuation, last_media_id, state,
