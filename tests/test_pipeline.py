@@ -1877,7 +1877,7 @@ class PipelineTests(unittest.TestCase):
         files, kwargs = album_calls[0][1], album_calls[0][2]
         self.assertEqual(len(files), 2)
         self.assertEqual(kwargs["caption"], ["", ""])
-        self.assertEqual(kwargs["reply_to"], client.kinds("send_message")[0][1])
+        self.assertEqual(kwargs["reply_to"], 1001)
         self.assertEqual(
             len({message.grouped_id for message in client.messages.values()
                  if message.grouped_id is not None}),
