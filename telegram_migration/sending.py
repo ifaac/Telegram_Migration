@@ -310,7 +310,11 @@ async def _send_individual_media(client, channel, chunks, media, reply_to, state
 
 async def _send_multiple_media(client, channel, chunks, media, reply_to, state, source_id):
     has_sticker = any(kind in STICKER_KINDS for _path, kind in media)
-    needs_prefix_text = has_sticker or bool(media and media[0][1] in NO_CAPTION_KINDS)
+    needs_prefix_text = (
+        has_sticker
+        or bool(media and media[0][1] in NO_CAPTION_KINDS)
+        or bool(media and media[-1][1] in NO_CAPTION_KINDS)
+    )
     individual = (
         has_sticker
         or any(kind in ("gif", "voice", "round_video") for _path, kind in media)
@@ -390,7 +394,8 @@ async def _do_send(client, channel, chunks, media, reply_to, forward_source,
     if data and data.get("_inferred_album"):
         album_caption = data.get("_album_caption_text") or ""
         album_caption_entities = data.get("_album_caption_entities") or []
-        if exportmedia.album_compatible(media):
+        if (exportmedia.album_compatible(media)
+                and not any(kind in NO_CAPTION_KINDS for _path, kind in media)):
             return await _send_album(
                 client, channel, chunks, media, reply_to, state, source_id,
                 force_document=all(kind == "document" for _path, kind in media),
