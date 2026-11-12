@@ -1203,7 +1203,7 @@ class AsyncSendTests(unittest.TestCase):
             async def get_messages(channel, ids=None):
                 return sent if ids == sent.id else None
             client = SimpleNamespace(edit_message=edit_message, get_messages=get_messages)
-            caption = "Alice\\n12 March 2023 · 10:01\\n\\n"
+            caption = "Alice\n12 March 2023 · 10:01\n\n"
             entities = [tl.MessageEntityBold(offset=0, length=5)]
             result = await uploads.ensure_media_caption(
                 client, "channel", sent.id, caption, entities,
@@ -1225,7 +1225,7 @@ class AsyncSendTests(unittest.TestCase):
             client = SimpleNamespace(edit_message=edit_message)
             with self.assertRaisesRegex(RuntimeError, "existing media message"):
                 await uploads.ensure_media_caption(
-                    client, "channel", sent.id, "Alice\\n12 March 2023",
+                    client, "channel", sent.id, "Alice\n12 March 2023",
                     source_id="78", message=sent,
                 )
         asyncio.run(scenario())
