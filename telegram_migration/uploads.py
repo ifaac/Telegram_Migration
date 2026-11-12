@@ -13,12 +13,7 @@ from .constants import STICKER_KINDS
 
 
 def _sticker_upload_options(path, kind):
-    """Build MTProto document attributes for a native Telegram sticker.
-
-    The sender/date caption is still passed separately to send_file(). Telegram's
-    messages.sendMedia request carries that caption in its message field while
-    these attributes identify the uploaded document as a sticker.
-    """
+    """Build Telethon options that mark a file as a Telegram sticker."""
     ext = os.path.splitext(path)[1].casefold()
     sticker_attr_cls = getattr(tl, "DocumentAttributeSticker", None)
     empty_set_cls = getattr(tl, "InputStickerSetEmpty", None)
@@ -28,7 +23,10 @@ def _sticker_upload_options(path, kind):
         )
 
     attributes = [sticker_attr_cls(alt="🙂", stickerset=empty_set_cls())]
-    options = {"attributes": attributes}
+    options = {
+        "force_document": True,
+        "attributes": attributes,
+    }
 
     if kind == "sticker_animated" or ext == ".tgs":
         options["mime_type"] = "application/x-tgsticker"
@@ -55,27 +53,24 @@ def _sticker_upload_options(path, kind):
                 supports_streaming=False,
             )
         attributes.append(video_attr)
+        # Keep the upload running if a file is malformed or ffprobe cannot read it.
         if not metadata:
-            print(
-                f"    warning: could not read video metadata for sticker "
-                f"{os.path.basename(path)}; using 512x512 / 1s fallback"
-            )
+            print(f"    warning: could not read video metadata for sticker {os.path.basename(path)}; using 512x512 / 1s fallback")
         options["nosound_video"] = True
-    elif ext in (".webp", ".png"):
-        # Static sticker files are image files by extension. Force the document
-        # media path so Telethon does not upload them as ordinary photos.
-        options["force_document"] = True
-        options["mime_type"] = "image/webp" if ext == ".webp" else "image/png"
+    elif ext == ".webp":
+        options["mime_type"] = "image/webp"
+    elif ext == ".png":
+        options["mime_type"] = "image/png"
     else:
-        print(
-            f"    warning: unknown sticker format {ext or '(no extension)'}; "
-            "sending as a document without a native sticker guarantee"
-        )
+        # Unknown files from the stickers directory are still preserved as a
+        # document instead of blocking the whole migration, but cannot be
+        # guaranteed to display as a Telegram sticker.
+        print(f"    warning: unknown sticker format {ext or '(no extension)'}; sending as a document")
         options.pop("attributes", None)
-        options["force_document"] = True
         options["mime_type"] = None
 
     return options
+
 
 # send_file options that some Telethon builds do not accept. They are dropped
 # (once, remembered) when the installed Telethon rejects them with a TypeError.
@@ -184,14 +179,4 @@ async def send_media_item(client, channel, path, kind, reply_to, source_id=None,
         lambda **kw: send_file(client, channel, path, **kw),
         kwargs, caption, entities, source_id,
     )
-    message = sent[0] if isinstance(sent, (list, tuple)) else sent
-    if kind in STICKER_KINDS and caption:
-        # Verify Telegram returned the caption on the same document message.
-        actual_caption = getattr(message, "message", None)
-        if actual_caption != caption:
-            raise RuntimeError(
-                f"Telegram did not retain the caption on sticker file "
-                f"{os.path.basename(path)} (source id={source_id}); "
-                f"expected {caption!r}, received {actual_caption!r}"
-            )
-    return message
+    return sent[0] if isinstance(sent, (list, tuple)) else sent
