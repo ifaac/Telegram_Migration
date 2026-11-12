@@ -117,43 +117,64 @@ async def _send_attribution_reply(client, channel, target_message_id, text,
         channel_peer = tl.InputPeerChannel(
             channel_id=channel_id, access_hash=int(access_hash)
         )
-        full = await client(fn.channels.GetFullChannelRequest(channel=input_channel))
-        linked_chat_id = getattr(getattr(full, "full_chat", None), "linked_chat_id", None)
-        if not linked_chat_id:
-            raise RuntimeError(
-                "Cannot attach sender/date as a reply: the destination broadcast "
-                "channel has no linked discussion group. Link a discussion group "
-                "and make the migration bot an administrator/member with permission "
-                "to send messages there."
+        # Lock the delivery route in the checkpoint before sending. If the
+        # process stops and resumes, the same random_id must be retried against
+        # the same peer (Telegram deduplicates random IDs per destination).
+        standalone = progress_state.get("delivery_mode") == "standalone_channel_post"
+        discussion_peer = None
+        if not standalone:
+            full = await client(fn.channels.GetFullChannelRequest(channel=input_channel))
+            linked_chat_id = getattr(
+                getattr(full, "full_chat", None), "linked_chat_id", None
             )
+            if not linked_chat_id:
+                # A broadcast channel without a discussion group cannot host
+                # comments. Preserve attribution as the next channel post
+                # instead of failing/retrying the already-sent sticker or emoji.
+                standalone = True
+                progress_state["delivery_mode"] = "standalone_channel_post"
+                progress.save_state(state["src"], state)
+            else:
+                discussion_chat = next(
+                    (chat for chat in getattr(full, "chats", ()) or ()
+                     if int(getattr(chat, "id", -1)) == int(linked_chat_id)),
+                    None,
+                )
+                if discussion_chat is None or getattr(
+                    discussion_chat, "access_hash", None
+                ) is None:
+                    raise RuntimeError(
+                        "Telegram reported a linked discussion group but did not "
+                        "return its access hash. The bot must have access to that group."
+                    )
+                discussion_peer = tl.InputPeerChannel(
+                    channel_id=int(linked_chat_id),
+                    access_hash=int(discussion_chat.access_hash),
+                )
+                progress_state["delivery_mode"] = "discussion_reply"
+                progress.save_state(state["src"], state)
 
-        discussion_chat = next(
-            (chat for chat in getattr(full, "chats", ()) or ()
-             if int(getattr(chat, "id", -1)) == int(linked_chat_id)),
-            None,
-        )
-        if discussion_chat is None or getattr(discussion_chat, "access_hash", None) is None:
-            raise RuntimeError(
-                "Telegram reported a linked discussion group but did not return "
-                "its access hash. The bot must have access to that group."
+        if standalone:
+            request = fn.messages.SendMessageRequest(
+                peer=channel_peer,
+                message=text,
+                random_id=random_id,
+                entities=entities or None,
+                no_webpage=True,
             )
-
-        discussion_peer = tl.InputPeerChannel(
-            channel_id=int(linked_chat_id),
-            access_hash=int(discussion_chat.access_hash),
-        )
-        reply_to = tl.InputReplyToMessage(
-            reply_to_msg_id=int(target_message_id),
-            reply_to_peer_id=channel_peer,
-        )
-        request = fn.messages.SendMessageRequest(
-            peer=discussion_peer,
-            message=text,
-            random_id=random_id,
-            reply_to=reply_to,
-            entities=entities or None,
-            no_webpage=True,
-        )
+        else:
+            reply_to = tl.InputReplyToMessage(
+                reply_to_msg_id=int(target_message_id),
+                reply_to_peer_id=channel_peer,
+            )
+            request = fn.messages.SendMessageRequest(
+                peer=discussion_peer,
+                message=text,
+                random_id=random_id,
+                reply_to=reply_to,
+                entities=entities or None,
+                no_webpage=True,
+            )
         result = await client(request)
         reply_message_id = _sent_message_id_from_updates(result, random_id)
         if reply_message_id is None:
