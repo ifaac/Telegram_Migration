@@ -25,6 +25,16 @@ from telegram_migration import (
 
 
 class TextAndEntityTests(unittest.TestCase):
+    def test_emoji_only_text_detector_handles_flags_keycaps_and_zwj_sequences(self):
+        for value in ("👋", "👋 😍", "🇬🇷", "#️⃣", "👨‍👩‍👧‍👦", "👍🏽"):
+            with self.subTest(value=value):
+                self.assertTrue(textutil.is_emoji_only_text(value))
+
+    def test_emoji_only_text_detector_rejects_mixed_text_and_plain_digits(self):
+        for value in ("hello 👋", "123", "a", "© copyright", ""):
+            with self.subTest(value=value):
+                self.assertFalse(textutil.is_emoji_only_text(value))
+
     def test_utf16_length_counts_non_bmp_as_two_units(self):
         self.assertEqual(textutil.u16len("A😀B"), 4)
 
