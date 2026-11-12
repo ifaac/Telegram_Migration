@@ -1272,25 +1272,13 @@ class PipelineTests(unittest.TestCase):
         self.assertIn("album 701–710", output)
         self.assertIn("sent=12", output)
 
-    def test_source_group_inference_is_type_agnostic_for_every_supported_size(self):
+    def test_source_group_inference_groups_album_capable_media_for_every_supported_size(self):
         records = []
         expected = {}
         next_id = 2000
         media_builders = (
             ("photo", lambda p: fakes.photo(p), "photos"),
             ("video", lambda p: fakes.video(p), "video_files"),
-            ("gif", lambda p: (
-                '<div class="media_wrap clearfix"><a class="animated_wrap" '
-                f'href="{p}"><div class="gif_play">GIF</div></a></div>'
-            ), "video_files"),
-            ("voice", lambda p: (
-                '<div class="media_wrap clearfix"><a class="media_voice_message" '
-                f'href="{p}"></a></div>'
-            ), "voice_messages"),
-            ("sticker", lambda p: (
-                '<div class="sticker_wrap"><a '
-                f'href="{p}"></a></div>'
-            ), "stickers"),
         )
 
         for count in range(2, 11):
@@ -1298,10 +1286,7 @@ class PipelineTests(unittest.TestCase):
             expected[str(first_id)] = count
             for index in range(count):
                 kind, builder, folder = media_builders[index % len(media_builders)]
-                extension = {
-                    "photo": ".jpg", "video": ".mp4", "gif": ".mp4",
-                    "voice": ".ogg", "round_video": ".mp4", "sticker": ".webp",
-                }[kind]
+                extension = {"photo": ".jpg", "video": ".mp4"}[kind]
                 relative = f"{folder}/group_{count}_{index}{extension}"
                 fakes.write_file(self.folder.name, relative)
                 joined = "joined" if index else ""
