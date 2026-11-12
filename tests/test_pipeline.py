@@ -1947,7 +1947,10 @@ class PipelineTests(unittest.TestCase):
 
     def test_joined_voice_notes_and_stickers_keep_sender_on_each_media_message(self):
         voice_paths = ("voice_messages/voice-1.ogg", "voice_messages/voice-2.ogg")
-        sticker_paths = ("stickers/sticker-1.webp", "stickers/sticker-2.tgs")
+        sticker_paths = (
+            "stickers/AnimatedSticker.tgs",
+            "stickers/AnimatedSticker (1).tgs",
+        )
         for relative in voice_paths + sticker_paths:
             fakes.write_file(self.folder.name, relative)
 
@@ -1959,18 +1962,25 @@ class PipelineTests(unittest.TestCase):
                 '</a></div>'
             )
 
-        def sticker(path):
+        def sticker(path, emoji):
+            # Same media_wrap / media_photo / Sticker label structure as
+            # restore1.zip messages 19384 and 19385.
             return (
-                '<div class="sticker_wrap">'
-                f'<a class="media clearfix pull_left block_link" href="{path}">'
+                '<div class="media_wrap clearfix">'
+                f'<a class="media clearfix pull_left block_link media_photo" href="{path}">'
+                '<div class="fill pull_left"></div>'
+                '<div class="body"><div class="title bold">Sticker</div>'
+                f'<div class="status details">{emoji}</div></div>'
                 '</a></div>'
             )
 
         records = [
             fakes.message(1, voice(voice_paths[0]), sender="Alice", minute=1),
             fakes.message(2, voice(voice_paths[1]), sender="", classes="joined", minute=2),
-            fakes.message(3, sticker(sticker_paths[0]), sender="Bob", minute=3),
-            fakes.message(4, sticker(sticker_paths[1]), sender="", classes="joined", minute=4),
+            fakes.message(3, sticker(sticker_paths[0], "👋"),
+                          sender="ㅤㅤㅤㅤㅤㅤ 🗝 ㅤㅤㅤㅤㅤㅤ", minute=3),
+            fakes.message(4, sticker(sticker_paths[1], "😍"),
+                          sender="esprít", minute=4),
             fakes.message(5, fakes.text("joined emoji-only continuation"), sender="",
                           classes="joined", minute=5),
         ]
@@ -1982,10 +1992,10 @@ class PipelineTests(unittest.TestCase):
         captions = [call[2]["caption"] for call in media_calls]
         self.assertIn("Alice\n12 March 2023", captions[0])
         self.assertIn("Alice\n12 March 2023", captions[1])
-        self.assertIn("Bob\n12 March 2023", captions[2])
-        self.assertIn("Bob\n12 March 2023", captions[3])
+        self.assertIn("ㅤㅤㅤㅤㅤㅤ 🗝 ㅤㅤㅤㅤㅤㅤ\n12 March 2023", captions[2])
+        self.assertIn("esprít\n12 March 2023", captions[3])
         self.assertEqual(client.texts(), [
-            "Bob\n12 March 2023 · 10:05\n\njoined emoji-only continuation"
+            "esprít\n12 March 2023 · 10:05\n\njoined emoji-only continuation"
         ])
         self.assertIn("sent=5", output)
         self.assertIn("failed=0", output)
