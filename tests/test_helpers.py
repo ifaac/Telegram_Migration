@@ -1223,7 +1223,7 @@ class AsyncSendTests(unittest.TestCase):
             async def edit_message(*args, **kwargs):
                 raise RuntimeError("caption not supported")
             client = SimpleNamespace(edit_message=edit_message)
-            with self.assertRaisesRegex(RuntimeError, "same media message"):
+            with self.assertRaisesRegex(RuntimeError, "existing media message"):
                 await uploads.ensure_media_caption(
                     client, "channel", sent.id, "Alice\\n12 March 2023",
                     source_id="78", message=sent,
