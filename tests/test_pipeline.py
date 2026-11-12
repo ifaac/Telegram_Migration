@@ -933,7 +933,7 @@ class PipelineTests(unittest.TestCase):
             original_init(this, *args, **kwargs)
             this.messages[777] = fakes.FakeMessage(
                 777,
-                message="Alice\\n12 March 2023 · 10:01\\n\\ncaption",
+                message="Alice\n12 March 2023 · 10:01\n\ncaption",
             )
 
         with patch.object(FakeTelegram, "__init__", init_with_existing_media):
