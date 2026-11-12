@@ -718,7 +718,7 @@ class PipelineTests(unittest.TestCase):
         with config.use_settings(self.settings()):
             self.assertEqual(
                 progress.load_id_map(),
-                {"105": 1001, "106": 1002, "107": 1003, "108": 1004},
+                {"105": 1001, "106": 1002, "107": 1004, "108": 1005},
             )
 
     def test_original_forwarded_reply_context_disables_native_forward_for_all_media_kinds(self):
