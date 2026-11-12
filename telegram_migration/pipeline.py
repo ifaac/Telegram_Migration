@@ -117,7 +117,7 @@ async def _process_message(elem, client, channel, id_map, partial, pending_repli
             date_separator = htmlexport.extract_date_separator(elem)
             if date_separator is not None:
                 ctx["current_export_date"] = date_separator
-                ctx["last_forward_name"] = ""
+                htmlexport.reset_forwarded_context(ctx)
                 return
             data = (htmlexport.extract_service_event_data(
                 elem, ctx.get("current_export_date")
@@ -126,7 +126,7 @@ async def _process_message(elem, client, channel, id_map, partial, pending_repli
             data = htmlexport.extract_message_data(elem)
 
         if data is None:
-            ctx["last_forward_name"] = ""
+            htmlexport.reset_forwarded_context(ctx)
             if "service" in classes and source_id:
                 stats["skipped"] += 1
             mark_completed = bool(source_id)
