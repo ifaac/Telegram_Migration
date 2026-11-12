@@ -927,7 +927,17 @@ class PipelineTests(unittest.TestCase):
         fakes.write_export(self.folder.name, [fakes.message(1, fakes.text("caption") + fakes.photo("photos/p.jpg"))])
         with open(self.path("migration_partial_sends.jsonl"), "w", encoding="utf-8") as handle:
             handle.write(json.dumps({"src": "1", "state": {"media_id": 777}}) + "\n")
-        client, _, _ = self.run_once()
+        original_init = FakeTelegram.__init__
+
+        def init_with_existing_media(this, *args, **kwargs):
+            original_init(this, *args, **kwargs)
+            this.messages[777] = fakes.FakeMessage(
+                777,
+                message="Alice\\n12 March 2023 · 10:01\\n\\ncaption",
+            )
+
+        with patch.object(FakeTelegram, "__init__", init_with_existing_media):
+            client, _, _ = self.run_once()
         self.assertEqual(client.kinds("send_file"), [])
         with config.use_settings(self.settings()):
             self.assertEqual(progress.load_id_map(), {"1": 777})
@@ -1916,7 +1926,10 @@ class PipelineTests(unittest.TestCase):
 
             async def send_file(channel, path, **kwargs):
                 calls.append((path, kwargs))
-                return type("Sent", (), {"id": 800 + len(calls)})()
+                return type("Sent", (), {
+                    "id": 800 + len(calls),
+                    "message": kwargs.get("caption") or "",
+                })()
 
             async def send_message(channel, text, **kwargs):
                 raise AssertionError("caption must not be emitted as a separate text message")
