@@ -137,10 +137,14 @@ def _single_message(value):
 
 async def ensure_media_caption(client, channel, message_id, caption, entities=None,
                                source_id=None, message=None):
-    """Verify the caption on the media message itself; repair it in place if needed.
+    """Verify the caption by fetching the stored destination message.
 
-    Never creates a separate text message. If Telegram did not retain the
-    caption on upload, edit the already-sent media message and verify the result.
+    The object returned by send_file() is not accepted as proof that Telegram
+    persisted the caption: some upload paths can return a local response object
+    that echoes the requested text. Always re-fetch by destination ID. If the
+    stored message lacks the caption, edit that same media message and fetch it
+    again. Never creates a separate text message.
+
     Callers checkpoint the destination message ID before invoking this helper,
     so a failed verification can be retried without uploading duplicate media.
     """
@@ -150,15 +154,23 @@ async def ensure_media_caption(client, channel, message_id, caption, entities=No
     async def fetch_message():
         getter = getattr(client, "get_messages", None)
         if not callable(getter):
-            return None
+            raise RuntimeError(
+                f"Cannot independently verify caption for source id={source_id}; "
+                "Telegram client does not expose get_messages"
+            )
         result = await getter(channel, ids=message_id)
-        return _single_message(result)
+        stored = _single_message(result)
+        if stored is None:
+            raise RuntimeError(
+                f"Cannot retrieve destination media message id={message_id} "
+                f"for source id={source_id}; refusing to assume its caption was saved"
+            )
+        return stored
 
-    if message is None:
-        message = await fetch_message()
-
-    if _caption_message_text(message) == caption:
-        return message
+    # Deliberately ignore the caller-supplied send_file() object for verification.
+    stored = await fetch_message()
+    if _caption_message_text(stored) == caption:
+        return stored
 
     editor = getattr(client, "edit_message", None)
     if not callable(editor):
@@ -168,15 +180,15 @@ async def ensure_media_caption(client, channel, message_id, caption, entities=No
         )
 
     try:
-        edited = await editor(
+        await editor(
             channel, message_id, caption,
             formatting_entities=entities or None, parse_mode=None,
         )
     except FloodWaitError:
         raise
     except MessageNotModifiedError:
-        # Telegram confirms the requested caption is already present.
-        return message
+        # Still re-fetch below; never treat the local response as verification.
+        pass
     except Exception as exc:
         raise RuntimeError(
             f"Telegram did not retain the caption for source id={source_id}; "
@@ -184,13 +196,9 @@ async def ensure_media_caption(client, channel, message_id, caption, entities=No
             f"{type(exc).__name__}: {exc}"
         ) from exc
 
-    edited = _single_message(edited)
-    if _caption_message_text(edited) == caption:
-        return edited
-
-    refreshed = await fetch_message()
-    if _caption_message_text(refreshed) == caption:
-        return refreshed
+    verified = await fetch_message()
+    if _caption_message_text(verified) == caption:
+        return verified
 
     raise RuntimeError(
         f"Caption verification failed for source id={source_id}, "
