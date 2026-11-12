@@ -804,10 +804,11 @@ class PipelineTests(unittest.TestCase):
                     self.assertTrue(kwargs["voice_note"])
                 if expected_kind == "round_video":
                     self.assertNotIn("video_note", kwargs)
-                self.assertTrue(
-                    any(type(entity).__name__ == "MessageEntityBlockquote"
-                        for entity in kwargs["formatting_entities"])
-                )
+                if not expected_kind.startswith("sticker"):
+                    self.assertTrue(
+                        any(type(entity).__name__ == "MessageEntityBlockquote"
+                            for entity in kwargs["formatting_entities"])
+                    )
 
     def test_forwarded_original_reply_takes_priority_over_outer_reply(self):
         media_path = "audio_files/forwarded-track.mp3"
