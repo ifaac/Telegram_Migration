@@ -3,7 +3,7 @@
 import asyncio
 import os
 
-from telethon.errors import FloodWaitError
+from telethon.errors import FloodWaitError, MessageNotModifiedError
 from telethon.tl import types as tl
 
 from . import album, config, exportmedia, formatfallback, progress, uploads
@@ -93,6 +93,63 @@ async def _send_text_chunks(client, channel, chunks, reply_to, state, prog_key,
         if persist and src is not None:
             progress.save_state(src, state)
     return prog["first"]
+
+
+def _message_text(message):
+    if message is None:
+        return None
+    value = getattr(message, "message", None)
+    return value if value is not None else getattr(message, "text", None)
+
+
+async def _get_message_by_id(client, channel, message_id):
+    getter = getattr(client, "get_messages", None)
+    if not callable(getter):
+        return None
+    message = await getter(channel, ids=int(message_id))
+    if isinstance(message, (list, tuple)):
+        return message[0] if message else None
+    return message
+
+
+async def _ensure_media_caption(client, channel, message, caption, entities, source_id):
+    """Confirm Telegram retained a media caption; repair it on the same message."""
+    if not caption or _message_text(message) == caption:
+        return message
+
+    message_id = getattr(message, "id", None)
+    edit = getattr(client, "edit_message", None)
+    if message_id is None or not callable(edit):
+        raise RuntimeError(
+            f"Telegram returned media without the caption for source id={source_id}; "
+            "the caption cannot be repaired in place"
+        )
+
+    try:
+        edited = await formatfallback.with_formatting_fallback(
+            lambda **kw: edit(channel, int(message_id), caption, **kw),
+            {"formatting_entities": entities or None, "parse_mode": None},
+            caption, entities, source_id,
+        )
+    except FloodWaitError:
+        raise
+    except MessageNotModifiedError:
+        edited = None
+    except Exception as exc:
+        raise RuntimeError(
+            f"Telegram did not retain the media caption for source id={source_id} "
+            f"(message {message_id}); in-place repair failed: {type(exc).__name__}: {exc}"
+        ) from exc
+
+    if _message_text(edited) == caption:
+        return edited
+    refreshed = await _get_message_by_id(client, channel, message_id)
+    if _message_text(refreshed) == caption:
+        return refreshed
+    raise RuntimeError(
+        f"Telegram did not retain the media caption for source id={source_id} "
+        f"(message {message_id}); refusing to mark a senderless media post complete"
+    )
 
 
 async def _send_native_forward(client, channel, forward_source, reply_to, state,
@@ -261,21 +318,41 @@ async def _send_album(client, channel, chunks, media, reply_to, state, source_id
 
 async def _send_individual_media(client, channel, chunks, media, reply_to, state,
                                  source_id):
-    """Send an ungroupable source media sequence in order, captioning its final item."""
+    """Send an ungroupable sequence, then verify its final media caption in place."""
     first_text, first_ents = chunks[0]
     state.setdefault("multi_media_ids", [])
+    final_message = None
     while len(state["multi_media_ids"]) < len(media):
         index = len(state["multi_media_ids"])
         path, kind = media[index]
         is_final_item = index == len(media) - 1
         caption = first_text if is_final_item else ""
-        entities = first_ents if is_final_item else None
+        entities = first_ents if caption else None
         sent_msg = await uploads.send_media_item(
             client, channel, path, kind, reply_to, source_id,
             caption=caption, entities=entities,
         )
         state["multi_media_ids"].append(sent_msg.id)
         progress.save_state(state["src"], state)
+        if is_final_item:
+            final_message = sent_msg
+
+    if first_text and not state.get("multi_caption_verified"):
+        if final_message is None:
+            final_message = await _get_message_by_id(
+                client, channel, state["multi_media_ids"][-1]
+            )
+        if final_message is None:
+            raise RuntimeError(
+                f"Cannot verify the final media caption for source id={source_id}; "
+                "Telegram did not return the saved media message"
+            )
+        await _ensure_media_caption(
+            client, channel, final_message, first_text, first_ents, source_id
+        )
+        state["multi_caption_verified"] = True
+        progress.save_state(state["src"], state)
+
     state["album_id"] = state["multi_media_ids"][0]
     progress.save_state(state["src"], state)
     return False
@@ -324,12 +401,26 @@ async def _send_single_media(client, channel, chunks, media, reply_to, state, so
     first_text, first_ents = chunks[0]
     rest = chunks[1:]
     path, kind = media[0]
+    media_msg = None
     if "media_id" not in state:
         media_msg = await uploads.send_media_item(
             client, channel, path, kind, reply_to, source_id,
             caption=first_text, entities=first_ents,
         )
         state["media_id"] = media_msg.id
+        progress.save_state(state["src"], state)
+    if first_text and not state.get("media_caption_verified"):
+        if media_msg is None:
+            media_msg = await _get_message_by_id(client, channel, state["media_id"])
+        if media_msg is None:
+            raise RuntimeError(
+                f"Cannot verify the media caption for source id={source_id}; "
+                "Telegram did not return the saved media message"
+            )
+        await _ensure_media_caption(
+            client, channel, media_msg, first_text, first_ents, source_id
+        )
+        state["media_caption_verified"] = True
         progress.save_state(state["src"], state)
     if rest:
         await _send_text_chunks(client, channel, rest, state["media_id"],
