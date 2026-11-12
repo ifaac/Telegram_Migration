@@ -17,6 +17,8 @@ class FakeMessage:
 class FakeTelegram:
     """Stands in for telethon.TelegramClient; records every call in `.calls`."""
 
+    linked_chat_id = 2
+
     instances = []
 
     def __init__(self, *args, **kwargs):
@@ -46,12 +48,21 @@ class FakeTelegram:
 
         if isinstance(request, fn.channels.GetFullChannelRequest):
             self.calls.append(("get_full_channel", request))
+            linked_chat_id = self.linked_chat_id
+            chats = (
+                [SimpleNamespace(id=linked_chat_id, access_hash=222)]
+                if linked_chat_id else []
+            )
             return SimpleNamespace(
-                full_chat=SimpleNamespace(linked_chat_id=2),
-                chats=[SimpleNamespace(id=2, access_hash=222)],
+                full_chat=SimpleNamespace(linked_chat_id=linked_chat_id),
+                chats=chats,
             )
         if isinstance(request, fn.messages.SendMessageRequest):
-            self.calls.append(("send_discussion_reply", request))
+            call_kind = (
+                "send_discussion_reply" if request.reply_to is not None
+                else "send_channel_attribution"
+            )
+            self.calls.append((call_kind, request))
             message = FakeMessage(self._new_id(), message=request.message)
             self.messages[message.id] = message
             return SimpleNamespace(updates=[
