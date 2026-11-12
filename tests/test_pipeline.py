@@ -1839,8 +1839,14 @@ class PipelineTests(unittest.TestCase):
                 self.assertIn("Forwarded from Original sender", kwargs["caption"])
                 self.assertIn("5 November 2026 · 19:35:11", kwargs["caption"])
                 self.assertIsNone(kwargs["reply_to"])
-                self.assertTrue(kwargs["force_document"])
-                self.assertNotIn("attributes", kwargs)
+                self.assertTrue(any(
+                    isinstance(attribute, tl.DocumentAttributeSticker)
+                    for attribute in kwargs["attributes"]
+                ))
+                if extension == ".webp":
+                    self.assertTrue(kwargs["force_document"])
+                else:
+                    self.assertNotIn("force_document", kwargs)
                 with config.use_settings(self.settings()):
                     self.assertEqual(progress.load_id_map(), {"701": 1001})
 
@@ -1875,7 +1881,10 @@ class PipelineTests(unittest.TestCase):
             self.assertEqual(calls[1][1]["caption"],
                              "Forwarded from Original sender\\n5 November 2026")
             self.assertTrue(calls[0][1]["force_document"])
-            self.assertNotIn("attributes", calls[0][1])
+            self.assertTrue(any(
+                isinstance(attribute, tl.DocumentAttributeSticker)
+                for attribute in calls[0][1]["attributes"]
+            ))
         asyncio.run(scenario())
 
 
@@ -1992,9 +2001,12 @@ class PipelineTests(unittest.TestCase):
         self.assertTrue(captions[2].endswith("\n\n👋"))
         self.assertTrue(captions[3].endswith("\n\n😍"))
         for call in media_calls[2:]:
-            self.assertTrue(call[2]["force_document"])
             self.assertEqual(call[2]["mime_type"], "application/x-tgsticker")
-            self.assertNotIn("attributes", call[2])
+            self.assertNotIn("force_document", call[2])
+            self.assertTrue(any(
+                isinstance(attribute, tl.DocumentAttributeSticker)
+                for attribute in call[2]["attributes"]
+            ))
         self.assertEqual(client.texts(), [
             "esprít\n12 March 2023 · 10:05\n\njoined emoji-only continuation"
         ])
