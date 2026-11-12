@@ -744,20 +744,23 @@ class MediaTests(unittest.TestCase):
                 found = bigfiles.find_oversize_media([("exact", "document"), ("over", "document"), ("under", "photo")])
         self.assertEqual(found, [("over", "document", 1024 * 1024 + 1)])
 
-    def test_sticker_upload_options_set_document_and_format_mime(self):
+    def test_sticker_upload_options_force_plain_document_without_sticker_attributes(self):
         options = uploads._sticker_upload_options("sticker.webp", "sticker_static")
         self.assertTrue(options["force_document"])
         self.assertEqual(options["mime_type"], "image/webp")
-        self.assertEqual(len(options["attributes"]), 1)
-        self.assertIsInstance(options["attributes"][0], tl.DocumentAttributeSticker)
+        self.assertNotIn("attributes", options)
 
-    def test_video_sticker_metadata_is_used_when_available(self):
-        with patch.object(mediatools, "probe_video_metadata", return_value={"width": 256, "height": 128, "duration": 2.5}):
-            options = uploads._sticker_upload_options("sticker.webm", "sticker_video")
+        animated = uploads._sticker_upload_options("sticker.tgs", "sticker_animated")
+        self.assertTrue(animated["force_document"])
+        self.assertEqual(animated["mime_type"], "application/x-tgsticker")
+        self.assertNotIn("attributes", animated)
+
+    def test_video_sticker_is_sent_as_an_ordinary_document(self):
+        options = uploads._sticker_upload_options("sticker.webm", "sticker_video")
+        self.assertTrue(options["force_document"])
         self.assertEqual(options["mime_type"], "video/webm")
-        self.assertTrue(options["nosound_video"])
-        video = next(a for a in options["attributes"] if isinstance(a, tl.DocumentAttributeVideo))
-        self.assertEqual((video.w, video.h, video.duration), (256, 128, 2.5))
+        self.assertNotIn("attributes", options)
+        self.assertNotIn("nosound_video", options)
 
 
 class StateAndAuditTests(unittest.TestCase):
