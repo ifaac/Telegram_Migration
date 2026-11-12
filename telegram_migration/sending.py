@@ -264,6 +264,7 @@ async def _send_individual_media(client, channel, chunks, media, reply_to, state
     """Send an ungroupable source media sequence in order, captioning its final item."""
     first_text, first_ents = chunks[0]
     state.setdefault("multi_media_ids", [])
+    sent_final_item = False
     while len(state["multi_media_ids"]) < len(media):
         index = len(state["multi_media_ids"])
         path, kind = media[index]
@@ -281,8 +282,9 @@ async def _send_individual_media(client, channel, chunks, media, reply_to, state
                 client, channel, sent_msg.id, caption, entities,
                 source_id=source_id, message=sent_msg,
             )
+            sent_final_item = is_final_item
     # On resume, also verify the caption on the final already-uploaded item.
-    if first_text:
+    if first_text and not sent_final_item:
         await uploads.ensure_media_caption(
             client, channel, state["multi_media_ids"][-1],
             first_text, first_ents, source_id=source_id,
