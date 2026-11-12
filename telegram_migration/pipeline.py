@@ -189,7 +189,7 @@ async def _process_message(elem, client, channel, id_map, partial, pending_repli
             mark_completed = True
             return
 
-        if source_id in ctx["manual_done"]:
+        if source_id in id_map or source_id in ctx["manual_done"]:
             was_pending = source_id in pending_replies
             pending_replies.pop(source_id, None)
             if was_pending and not config.settings.dry_run:
@@ -326,38 +326,6 @@ async def _process_message(elem, client, channel, id_map, partial, pending_repli
                     source_id, data, preview_text, preview_entities, first_limit, reply_to,
                     kind_summary, stats, pending_replies,
                 )
-            mark_completed = True
-            return
-
-        # Existing ID-map entries used to be skipped before rebuilding the
-        # source caption. That meant a previous run which had already uploaded
-        # media without its sender/date could never repair those messages on a
-        # rerun: the new caption verifier was reached only for fresh uploads.
-        # Rebuild the exact caption above and audit the already-stored media
-        # message in place before treating a mapped source record as complete.
-        if source_id in id_map:
-            if data.get("media") and text:
-                saved = partial.get(source_id, {})
-                destination_id = int(id_map[source_id])
-                if len(data["media"]) > 1:
-                    saved_ids = (
-                        saved.get("multi_media_ids")
-                        or saved.get("album_message_ids")
-                    )
-                    if not saved_ids or len(saved_ids) != len(data["media"]):
-                        raise RuntimeError(
-                            f"Cannot safely repair mapped multi-media source id={source_id}: "
-                            "the saved destination IDs for every media item are unavailable"
-                        )
-                    destination_id = int(saved_ids[-1])
-                await sending.uploads.ensure_media_caption(
-                    client, channel, destination_id, text, entities,
-                    source_id=source_id,
-                )
-            was_pending = source_id in pending_replies
-            pending_replies.pop(source_id, None)
-            if was_pending and not config.settings.dry_run:
-                progress.save_pending_replies(pending_replies)
             mark_completed = True
             return
 
