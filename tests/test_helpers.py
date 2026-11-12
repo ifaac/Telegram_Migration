@@ -1239,7 +1239,7 @@ class AsyncSendTests(unittest.TestCase):
             async def get_messages(channel, ids=None):
                 return sent if ids == sent.id else None
             client = SimpleNamespace(edit_message=edit_message, get_messages=get_messages)
-            with self.assertRaisesRegex(RuntimeError, "cannot be edited"):
+            with self.assertRaisesRegex(RuntimeError, "could not attach it to existing media message"):
                 await uploads.ensure_media_caption(
                     client, "channel", sent.id, "Alice\n12 March 2023",
                     source_id="78", message=sent,
