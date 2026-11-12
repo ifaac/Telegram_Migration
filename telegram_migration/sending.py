@@ -8,7 +8,7 @@ from telethon.tl import types as tl
 
 from . import album, config, exportmedia, formatfallback, progress, uploads
 from .textutil import clean_invalid_entities, split_with_entities
-from .constants import STICKER_KINDS
+from .constants import NO_CAPTION_KINDS, STICKER_KINDS
 
 
 _native_warned = [False]
@@ -259,44 +259,74 @@ async def _send_album(client, channel, chunks, media, reply_to, state, source_id
     await send_group_caption(message_ids[-1])
     return message_ids if return_all else message_ids[0]
 
+async def _send_media_prefix(client, channel, chunks, reply_to, state, source_id,
+                             progress_key):
+    """Send composed sender/message text before media that cannot carry it."""
+    prefix_id = state.get("prefix_text_id")
+    if prefix_id is None:
+        # Reuse the text message saved by the first-wheel implementation.
+        prefix_id = state.get("text_id")
+    if prefix_id is None and any(text.strip() for text, _entities in chunks):
+        prefix_id = await _send_text_chunks(
+            client, channel, chunks, reply_to, state, progress_key, source_id
+        )
+    if prefix_id is not None:
+        state["prefix_text_id"] = int(prefix_id)
+        state["text_id"] = int(prefix_id)
+        progress.save_state(state["src"], state)
+    return prefix_id
+
+
 async def _send_individual_media(client, channel, chunks, media, reply_to, state,
-                                 source_id):
-    """Send an ungroupable source media sequence in order, captioning its final item."""
+                                 source_id, *, needs_prefix_text=False):
+    """Send ungroupable media, preserving main's upload path and wheel fallback."""
     first_text, first_ents = chunks[0]
+    if needs_prefix_text:
+        prefix_id = await _send_media_prefix(
+            client, channel, chunks, reply_to, state, source_id,
+            progress_key="prefix_prog",
+        )
+        media_reply_to = prefix_id or reply_to
+    else:
+        media_reply_to = reply_to
+
     state.setdefault("multi_media_ids", [])
     while len(state["multi_media_ids"]) < len(media):
         index = len(state["multi_media_ids"])
         path, kind = media[index]
         is_final_item = index == len(media) - 1
-        caption = first_text if is_final_item else ""
-        entities = first_ents if is_final_item else None
+        caption = first_text if is_final_item and not needs_prefix_text else ""
+        entities = first_ents if caption else None
         sent_msg = await uploads.send_media_item(
-            client, channel, path, kind, reply_to, source_id,
+            client, channel, path, kind, media_reply_to, source_id,
             caption=caption, entities=entities,
         )
         state["multi_media_ids"].append(sent_msg.id)
         progress.save_state(state["src"], state)
     state["album_id"] = state["multi_media_ids"][0]
     progress.save_state(state["src"], state)
-    return False
+    return needs_prefix_text
 
 
 async def _send_multiple_media(client, channel, chunks, media, reply_to, state, source_id):
     has_sticker = any(kind in STICKER_KINDS for _path, kind in media)
+    needs_prefix_text = has_sticker or bool(media and media[0][1] in NO_CAPTION_KINDS)
     individual = (
         has_sticker
         or any(kind in ("gif", "voice", "round_video") for _path, kind in media)
         or not exportmedia.album_compatible(media)
     )
     if individual:
-        await _send_individual_media(
-            client, channel, chunks, media, reply_to, state, source_id
+        prefixed = await _send_individual_media(
+            client, channel, chunks, media, reply_to, state, source_id,
+            needs_prefix_text=needs_prefix_text,
         )
     else:
         await _send_album(client, channel, chunks, media, reply_to, state, source_id)
+        prefixed = False
 
     rest = chunks[1:]
-    if rest:
+    if rest and not prefixed:
         group_ids = (
             state.get("album_message_ids")
             or state.get("multi_media_ids")
@@ -305,6 +335,8 @@ async def _send_multiple_media(client, channel, chunks, media, reply_to, state, 
         await _send_text_chunks(
             client, channel, rest, group_ids[-1], state, "tail_prog", source_id
         )
+    if prefixed:
+        return state.get("prefix_text_id") or state["album_id"]
     return state["album_id"]
 
 
@@ -318,6 +350,22 @@ async def _send_text_only(client, channel, chunks, reply_to, state, source_id):
     return await _send_text_chunks(
         client, channel, chunks, reply_to, state, "text_prog", source_id,
     )
+
+
+async def _send_no_caption_media(client, channel, chunks, media, reply_to, state, source_id):
+    """Send the composed text first, then make one no-caption media item reply to it."""
+    path, kind = media[0]
+    prefix_id = await _send_media_prefix(
+        client, channel, chunks, reply_to, state, source_id,
+        progress_key="text_prog",
+    )
+    if "media_id" not in state:
+        media_msg = await uploads.send_media_item(
+            client, channel, path, kind, prefix_id or reply_to, source_id
+        )
+        state["media_id"] = media_msg.id
+        progress.save_state(state["src"], state)
+    return prefix_id or state["media_id"]
 
 
 async def _send_single_media(client, channel, chunks, media, reply_to, state, source_id):
@@ -356,20 +404,31 @@ async def _do_send(client, channel, chunks, media, reply_to, forward_source,
         # item in source order, attach the caption to the first captionable
         # item (or as a prefix for voice notes), and checkpoint each
         # destination ID so an interrupted sequence resumes without duplicates.
-        first_caption, continuation = inferred_album_caption_parts(
-            album_caption, album_caption_entities,
+        needs_prefix_text = any(
+            kind in NO_CAPTION_KINDS for _path, kind in media
         )
-        sequence_chunks = [first_caption] + continuation
-        await _send_individual_media(
+        continuation = []
+        if needs_prefix_text:
+            sequence_chunks = split_with_entities(
+                album_caption, album_caption_entities or [],
+                config.settings.text_limit, config.settings.text_limit,
+            )
+        else:
+            first_caption, continuation = inferred_album_caption_parts(
+                album_caption, album_caption_entities,
+            )
+            sequence_chunks = [first_caption] + continuation
+        prefixed = await _send_individual_media(
             client, channel, sequence_chunks, media, reply_to, state,
-            source_id,
+            source_id, needs_prefix_text=needs_prefix_text,
         )
-        if continuation:
+        if continuation and not prefixed:
             last_media_id = state["multi_media_ids"][-1]
             await _send_text_chunks(
                 client, channel, continuation, last_media_id, state,
                 "album_caption_continuation_prog", source_id,
             )
+        # Keep main's per-item mapping: the prefix is context, not an album item.
         return list(state.get("multi_media_ids", []))
 
     forwarded_id = await _send_native_forward(
@@ -384,6 +443,10 @@ async def _do_send(client, channel, chunks, media, reply_to, forward_source,
         )
     if not media:
         return await _send_text_only(client, channel, chunks, reply_to, state, source_id)
+    if media[0][1] in NO_CAPTION_KINDS:
+        return await _send_no_caption_media(
+            client, channel, chunks, media, reply_to, state, source_id
+        )
     return await _send_single_media(
         client, channel, chunks, media, reply_to, state, source_id
     )
