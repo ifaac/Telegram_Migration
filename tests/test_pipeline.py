@@ -1004,7 +1004,7 @@ class PipelineTests(unittest.TestCase):
         )
         self.assertIn("caption before 🌸 after", caption)
 
-    def test_forwarded_voice_note_keeps_attribution_in_the_voice_message(self):
+    def test_forwarded_voice_note_replies_to_sender_context(self):
         media_path = "voice_messages/forwarded-note.ogg"
         fakes.write_file(self.folder.name, media_path)
         forwarded = (
@@ -1025,14 +1025,17 @@ class PipelineTests(unittest.TestCase):
         fakes.write_export(self.folder.name, [forwarded])
 
         client, _, _ = self.run_once(native_forward=False)
-        self.assertEqual(client.kinds("send_message"), [])
+        prefix_messages = client.kinds("send_message")
+        self.assertEqual(len(prefix_messages), 1)
+        self.assertIn("Archive owner", prefix_messages[0][1])
+        self.assertIn("Forwarded from Original voice author", prefix_messages[0][1])
+        self.assertIn("5 November 2026 · 19:35:11", prefix_messages[0][1])
         calls = client.kinds("send_file")
         self.assertEqual(len(calls), 1)
         kwargs = calls[0][2]
         self.assertTrue(kwargs["voice_note"])
-        self.assertIn("Forwarded from Original voice author", kwargs["caption"])
-        self.assertIn("5 November 2026 · 19:35:11", kwargs["caption"])
-        self.assertIsNone(kwargs["reply_to"])
+        self.assertEqual(kwargs["caption"], "")
+        self.assertEqual(kwargs["reply_to"], 1001)
 
     def test_mp3_with_audio_export_markup_is_sent_as_audio_not_forced_document(self):
         relative = "files/voice-track.mp3"
