@@ -217,10 +217,15 @@ def infer_media_groups(files, inline_emoji_ids=None):
     from . import htmlexport
 
     groups = {}
+    last_sender = ""
+    forward_context = {
+        "last_forward_name": "",
+        "last_forward_timestamp": None,
+        "last_forward_timestamp_has_time": False,
+        "last_forward_timestamp_has_seconds": False,
+    }
     for page in files:
         pending = []
-        last_sender = ""
-        forward_context = {"last_forward_name": ""}
 
         def flush():
             nonlocal pending
@@ -240,14 +245,14 @@ def infer_media_groups(files, inline_emoji_ids=None):
                 if "service" in classes:
                     flush()
                     last_sender = ""
-                    forward_context["last_forward_name"] = ""
+                    htmlexport.reset_forwarded_context(forward_context)
                     continue
 
                 data = htmlexport.extract_message_data(elem)
                 if data is None:
                     flush()
                     last_sender = ""
-                    forward_context["last_forward_name"] = ""
+                    htmlexport.reset_forwarded_context(forward_context)
                     continue
 
                 htmlexport.inherit_forwarded_sender(data, forward_context)
