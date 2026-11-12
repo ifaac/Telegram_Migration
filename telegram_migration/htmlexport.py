@@ -432,14 +432,30 @@ def inherit_forwarded_sender(data, context):
         return
 
     if data.get("forward_name"):
+        same_author = data["forward_name"] == context.get("last_forward_name")
         context["last_forward_name"] = data["forward_name"]
-        context["last_forward_timestamp"] = data.get("forward_timestamp")
-        context["last_forward_timestamp_has_time"] = bool(
-            data.get("forward_timestamp_has_time")
-        )
-        context["last_forward_timestamp_has_seconds"] = bool(
-            data.get("forward_timestamp_has_seconds")
-        )
+        if data.get("forward_timestamp") is not None:
+            context["last_forward_timestamp"] = data["forward_timestamp"]
+            context["last_forward_timestamp_has_time"] = bool(
+                data.get("forward_timestamp_has_time")
+            )
+            context["last_forward_timestamp_has_seconds"] = bool(
+                data.get("forward_timestamp_has_seconds")
+            )
+        elif not same_author:
+            context["last_forward_timestamp"] = None
+            context["last_forward_timestamp_has_time"] = False
+            context["last_forward_timestamp_has_seconds"] = False
+        else:
+            # Desktop can repeat the author on a joined row but omit its date.
+            # Keep the last explicit original timestamp for this same author.
+            data["forward_timestamp"] = context.get("last_forward_timestamp")
+            data["forward_timestamp_has_time"] = context.get(
+                "last_forward_timestamp_has_time", False
+            )
+            data["forward_timestamp_has_seconds"] = context.get(
+                "last_forward_timestamp_has_seconds", False
+            )
         return
 
     if data.get("joined") and context.get("last_forward_name"):
@@ -452,7 +468,7 @@ def inherit_forwarded_sender(data, context):
             data["forward_timestamp_has_seconds"] = context.get(
                 "last_forward_timestamp_has_seconds", False
             )
-        data["forward_header"] = f"Forwarded from {data['forward_name']}\\n"
+        data["forward_header"] = f"Forwarded from {data['forward_name']}\n"
         return
 
     reset_forwarded_context(context)
