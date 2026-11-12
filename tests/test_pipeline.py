@@ -1949,7 +1949,7 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(set(mapped), {"881", "882"})
 
 
-    def test_joined_voice_notes_and_stickers_keep_sender_on_each_media_message(self):
+    def test_joined_voice_notes_keep_captions_and_stickers_get_attribution_replies(self):
         voice_paths = ("voice_messages/voice-1.ogg", "voice_messages/voice-2.ogg")
         sticker_paths = (
             "stickers/AnimatedSticker.tgs",
@@ -1967,8 +1967,6 @@ class PipelineTests(unittest.TestCase):
             )
 
         def sticker(path, emoji):
-            # Same media_wrap / media_photo / Sticker label structure as
-            # restore1.zip messages 19384 and 19385.
             return (
                 '<div class="media_wrap clearfix">'
                 f'<a class="media clearfix pull_left block_link media_photo" href="{path}">'
@@ -1987,19 +1985,24 @@ class PipelineTests(unittest.TestCase):
                           sender="esprít", minute=4),
             fakes.message(5, fakes.text("joined emoji-only continuation"), sender="",
                           classes="joined", minute=5),
+            fakes.message(6, fakes.text("💙"), sender="Emoji sender", minute=6),
         ]
         fakes.write_export(self.folder.name, records)
 
         client, output, _ = self.run_once()
         media_calls = client.kinds("send_file")
         self.assertEqual(len(media_calls), 4)
+
+        # Voice notes stay as native voice-note uploads with sender/date captions.
         captions = [call[2]["caption"] for call in media_calls]
-        self.assertIn("Alice\n12 March 2023", captions[0])
-        self.assertIn("Alice\n12 March 2023", captions[1])
-        self.assertIn("ㅤㅤㅤㅤㅤㅤ 🗝 ㅤㅤㅤㅤㅤㅤ\n12 March 2023", captions[2])
-        self.assertIn("esprít\n12 March 2023", captions[3])
-        self.assertTrue(captions[2].endswith("\n\n👋"))
-        self.assertTrue(captions[3].endswith("\n\n😍"))
+        self.assertIn("Alice\\n12 March 2023", captions[0])
+        self.assertIn("Alice\\n12 March 2023", captions[1])
+        self.assertTrue(media_calls[0][2]["voice_note"])
+        self.assertTrue(media_calls[1][2]["voice_note"])
+
+        # Native TGS stickers are posted without captions; the attribution is a
+        # cross-chat reply in the linked discussion group, tied to each sticker.
+        self.assertEqual(captions[2:], ["", ""])
         for call in media_calls[2:]:
             self.assertEqual(call[2]["mime_type"], "application/x-tgsticker")
             self.assertNotIn("force_document", call[2])
@@ -2007,13 +2010,35 @@ class PipelineTests(unittest.TestCase):
                 isinstance(attribute, tl.DocumentAttributeSticker)
                 for attribute in call[2]["attributes"]
             ))
-        self.assertEqual(client.texts(), [
-            "esprít\n12 March 2023 · 10:05\n\njoined emoji-only continuation"
-        ])
-        self.assertIn("sent=5", output)
+
+        discussion_replies = client.kinds("send_discussion_reply")
+        self.assertEqual(len(discussion_replies), 3)
+        requests = [call[1] for call in discussion_replies]
+        self.assertIn("ㅤㅤㅤㅤㅤㅤ 🗝 ㅤㅤㅤㅤㅤㅤ\\n12 March 2023", requests[0].message)
+        self.assertIn("esprít\\n12 March 2023", requests[1].message)
+        self.assertEqual(requests[0].reply_to.reply_to_msg_id, 1003)
+        self.assertEqual(requests[1].reply_to.reply_to_msg_id, 1005)
+        for request in requests:
+            self.assertEqual(request.peer.channel_id, 2)
+            self.assertEqual(request.reply_to.reply_to_peer_id.channel_id, 1)
+
+        # Ordinary joined text remains unchanged. A standalone emoji stays as
+        # its own post, with the sender/date delivered as a reply.
+        text_posts = client.kinds("send_message")
+        self.assertEqual(len(text_posts), 2)
+        self.assertEqual(
+            text_posts[0][1],
+            "esprít\\n12 March 2023 · 10:05\\n\\njoined emoji-only continuation",
+        )
+        self.assertEqual(text_posts[1][1], "💙")
+        self.assertIsNone(text_posts[1][2].get("reply_to"))
+        self.assertIn("Emoji sender\\n12 March 2023", requests[2].message)
+        self.assertEqual(requests[2].reply_to.reply_to_msg_id, 1008)
+
+        self.assertIn("sent=6", output)
         self.assertIn("failed=0", output)
         with config.use_settings(self.settings()):
-            self.assertEqual(set(progress.load_id_map()), {"1", "2", "3", "4", "5"})
+            self.assertEqual(set(progress.load_id_map()), {"1", "2", "3", "4", "5", "6"})
 
 
 if __name__ == "__main__":
