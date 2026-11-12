@@ -1193,30 +1193,36 @@ class AsyncSendTests(unittest.TestCase):
                 self.assertEqual(state["album_caption_continuation_prog"]["done"], 1)
         asyncio.run(scenario())
 
-    def test_media_caption_is_repaired_on_the_same_message_if_upload_drops_it(self):
+    def test_media_caption_is_verified_against_stored_message_not_upload_response(self):
         async def scenario():
-            sent = SimpleNamespace(id=779, message="", text="")
+            # send_file()'s response echoes the requested caption, but the
+            # independently stored Telegram message initially has no caption.
+            upload_response = SimpleNamespace(id=779, message="Alice\n12 March 2023 · 10:01\n\n")
+            stored = SimpleNamespace(id=779, message="", text="")
             edits = []
+            fetches = []
             async def edit_message(channel, message_id, caption, **kwargs):
                 edits.append((channel, message_id, caption, kwargs))
-                sent.message = caption
-                sent.text = caption
-                return sent
+                stored.message = caption
+                stored.text = caption
+                return upload_response
             async def get_messages(channel, ids=None):
-                return sent if ids == sent.id else None
+                fetches.append(ids)
+                return stored if ids == stored.id else None
             client = SimpleNamespace(edit_message=edit_message, get_messages=get_messages)
             caption = "Alice\n12 March 2023 · 10:01\n\n"
             entities = [tl.MessageEntityBold(offset=0, length=5)]
             result = await uploads.ensure_media_caption(
-                client, "channel", sent.id, caption, entities,
-                source_id="77", message=sent,
+                client, "channel", upload_response.id, caption, entities,
+                source_id="77", message=upload_response,
             )
-            self.assertIs(result, sent)
+            self.assertIs(result, stored)
+            self.assertEqual(fetches, [779, 779])
             self.assertEqual(len(edits), 1)
-            self.assertEqual(edits[0][1], sent.id)
+            self.assertEqual(edits[0][1], stored.id)
             self.assertEqual(edits[0][2], caption)
             self.assertEqual(edits[0][3]["formatting_entities"], entities)
-            self.assertEqual(sent.message, caption)
+            self.assertEqual(stored.message, caption)
         asyncio.run(scenario())
 
     def test_media_caption_verification_fails_closed_when_same_message_cannot_be_fixed(self):
