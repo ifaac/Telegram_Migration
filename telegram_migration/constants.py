@@ -22,7 +22,7 @@ HTML_FILE_PATTERN = r"^messages(\d*)\.html$"
 # Sticker files need sticker-specific upload attributes, but MTProto
 # messages.sendMedia supports a message caption for sticker documents too.
 STICKER_KINDS = ("sticker_static", "sticker_animated", "sticker_video", "sticker_unknown")
-# These media types may retain message text at the MTProto level without
-# displaying it visibly beside the media in Telegram clients. Preserve the
-# archive context as a normal text message immediately before the media.
-NO_CAPTION_KINDS = (*STICKER_KINDS, "voice", "audio")
+# Every currently supported media type has a caption-capable send path:
+# voice notes use voice_note=True, stickers use MTProto document captions,
+# and captioned round videos are uploaded as regular videos.
+NO_CAPTION_KINDS = ()
