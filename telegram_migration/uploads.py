@@ -5,6 +5,7 @@ import os
 import re
 
 from telethon import TelegramClient
+from telethon.errors import FloodWaitError, MessageNotModifiedError
 from telethon.tl import types as tl
 
 from . import formatfallback, mediatools
@@ -117,6 +118,85 @@ async def send_file(client, channel, files, **kwargs):
                 print(f"    note: this Telethon does not accept send_file({bad}=...); skipping that option from now on")
                 continue
             raise
+
+
+def _caption_message_text(message):
+    if message is None:
+        return None
+    value = getattr(message, "message", None)
+    if value is None:
+        value = getattr(message, "text", None)
+    return value
+
+
+def _single_message(value):
+    if isinstance(value, (list, tuple)):
+        return value[0] if value else None
+    return value
+
+
+async def ensure_media_caption(client, channel, message_id, caption, entities=None,
+                               source_id=None, message=None):
+    """Verify the caption on the media message itself; repair it in place if needed.
+
+    Never creates a separate text message. If Telegram did not retain the
+    caption on upload, edit the already-sent media message and verify the result.
+    Callers checkpoint the destination message ID before invoking this helper,
+    so a failed verification can be retried without uploading duplicate media.
+    """
+    if not caption:
+        return message
+
+    async def fetch_message():
+        getter = getattr(client, "get_messages", None)
+        if not callable(getter):
+            return None
+        result = await getter(channel, ids=message_id)
+        return _single_message(result)
+
+    if message is None:
+        message = await fetch_message()
+
+    if _caption_message_text(message) == caption:
+        return message
+
+    editor = getattr(client, "edit_message", None)
+    if not callable(editor):
+        raise RuntimeError(
+            f"Telegram did not retain the caption for source id={source_id}; "
+            f"destination media message id={message_id} cannot be edited"
+        )
+
+    try:
+        edited = await editor(
+            channel, message_id, caption,
+            formatting_entities=entities or None, parse_mode=None,
+        )
+    except FloodWaitError:
+        raise
+    except MessageNotModifiedError:
+        # Telegram confirms the requested caption is already present.
+        return message
+    except Exception as exc:
+        raise RuntimeError(
+            f"Telegram did not retain the caption for source id={source_id}; "
+            f"could not attach it to existing media message id={message_id}: "
+            f"{type(exc).__name__}: {exc}"
+        ) from exc
+
+    edited = _single_message(edited)
+    if _caption_message_text(edited) == caption:
+        return edited
+
+    refreshed = await fetch_message()
+    if _caption_message_text(refreshed) == caption:
+        return refreshed
+
+    raise RuntimeError(
+        f"Caption verification failed for source id={source_id}, "
+        f"destination media message id={message_id}; sender/date and message "
+        "text were not retained on the media message"
+    )
 
 
 async def send_media_item(client, channel, path, kind, reply_to, source_id=None,
