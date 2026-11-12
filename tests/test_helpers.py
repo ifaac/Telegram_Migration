@@ -744,23 +744,35 @@ class MediaTests(unittest.TestCase):
                 found = bigfiles.find_oversize_media([("exact", "document"), ("over", "document"), ("under", "photo")])
         self.assertEqual(found, [("over", "document", 1024 * 1024 + 1)])
 
-    def test_sticker_upload_options_force_plain_document_without_sticker_attributes(self):
-        options = uploads._sticker_upload_options("sticker.webp", "sticker_static")
-        self.assertTrue(options["force_document"])
-        self.assertEqual(options["mime_type"], "image/webp")
-        self.assertNotIn("attributes", options)
+    def test_sticker_upload_options_keep_native_sticker_attributes(self):
+        static = uploads._sticker_upload_options("sticker.webp", "sticker_static")
+        self.assertTrue(static["force_document"])
+        self.assertEqual(static["mime_type"], "image/webp")
+        self.assertIsInstance(static["attributes"][0], tl.DocumentAttributeSticker)
 
         animated = uploads._sticker_upload_options("sticker.tgs", "sticker_animated")
-        self.assertTrue(animated["force_document"])
+        self.assertNotIn("force_document", animated)
         self.assertEqual(animated["mime_type"], "application/x-tgsticker")
-        self.assertNotIn("attributes", animated)
+        self.assertIsInstance(animated["attributes"][0], tl.DocumentAttributeSticker)
 
-    def test_video_sticker_is_sent_as_an_ordinary_document(self):
-        options = uploads._sticker_upload_options("sticker.webm", "sticker_video")
-        self.assertTrue(options["force_document"])
+    def test_video_sticker_keeps_native_sticker_and_video_attributes(self):
+        with patch.object(
+            mediatools, "probe_video_metadata",
+            return_value={"width": 256, "height": 128, "duration": 2.5},
+        ):
+            options = uploads._sticker_upload_options("sticker.webm", "sticker_video")
+        self.assertNotIn("force_document", options)
         self.assertEqual(options["mime_type"], "video/webm")
-        self.assertNotIn("attributes", options)
-        self.assertNotIn("nosound_video", options)
+        self.assertTrue(options["nosound_video"])
+        self.assertTrue(any(
+            isinstance(attribute, tl.DocumentAttributeSticker)
+            for attribute in options["attributes"]
+        ))
+        video = next(
+            attribute for attribute in options["attributes"]
+            if isinstance(attribute, tl.DocumentAttributeVideo)
+        )
+        self.assertEqual((video.w, video.h, video.duration), (256, 128, 2.5))
 
 
 class StateAndAuditTests(unittest.TestCase):
