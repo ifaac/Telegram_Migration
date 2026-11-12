@@ -154,8 +154,9 @@ async def _process_message(elem, client, channel, id_map, partial, pending_repli
         else:
             header = compose_message_header(timestamp, data["sender"])
         if len(data.get("media") or []) == 1:
-            media_kind = data["media"][0][1]
-            if media_kind.startswith("sticker_"):
+            media_path, media_kind = data["media"][0]
+            if (media_kind == "sticker_animated"
+                    and str(media_path).casefold().endswith(".tgs")):
                 data["_sticker_attribution_reply"] = True
 
         if (not data.get("media") and not data.get("is_forwarded")
