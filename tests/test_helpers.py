@@ -1191,6 +1191,45 @@ class AsyncSendTests(unittest.TestCase):
                 self.assertEqual(state["album_caption_continuation_prog"]["done"], 1)
         asyncio.run(scenario())
 
+    def test_media_caption_is_repaired_on_the_same_message_if_upload_drops_it(self):
+        async def scenario():
+            sent = SimpleNamespace(id=779, message="", text="")
+            edits = []
+            async def edit_message(channel, message_id, caption, **kwargs):
+                edits.append((channel, message_id, caption, kwargs))
+                sent.message = caption
+                sent.text = caption
+                return sent
+            async def get_messages(channel, ids=None):
+                return sent if ids == sent.id else None
+            client = SimpleNamespace(edit_message=edit_message, get_messages=get_messages)
+            caption = "Alice\\n12 March 2023 · 10:01\\n\\n"
+            entities = [tl.MessageEntityBold(offset=0, length=5)]
+            result = await uploads.ensure_media_caption(
+                client, "channel", sent.id, caption, entities,
+                source_id="77", message=sent,
+            )
+            self.assertIs(result, sent)
+            self.assertEqual(len(edits), 1)
+            self.assertEqual(edits[0][1], sent.id)
+            self.assertEqual(edits[0][2], caption)
+            self.assertEqual(edits[0][3]["formatting_entities"], entities)
+            self.assertEqual(sent.message, caption)
+        asyncio.run(scenario())
+
+    def test_media_caption_verification_fails_closed_when_same_message_cannot_be_fixed(self):
+        async def scenario():
+            sent = SimpleNamespace(id=780, message="", text="")
+            async def edit_message(*args, **kwargs):
+                raise RuntimeError("caption not supported")
+            client = SimpleNamespace(edit_message=edit_message)
+            with self.assertRaisesRegex(RuntimeError, "same media message"):
+                await uploads.ensure_media_caption(
+                    client, "channel", sent.id, "Alice\\n12 March 2023",
+                    source_id="78", message=sent,
+                )
+        asyncio.run(scenario())
+
     def test_video_without_audio_probe_result_is_not_forced_to_silent_video(self):
         async def scenario():
             calls = []
