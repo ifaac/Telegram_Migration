@@ -8,7 +8,7 @@ from telethon.tl import types as tl
 
 from . import album, config, exportmedia, formatfallback, progress, uploads
 from .textutil import clean_invalid_entities, split_with_entities
-from .constants import NO_CAPTION_KINDS, STICKER_KINDS
+from .constants import STICKER_KINDS
 
 
 _native_warned = [False]
@@ -261,14 +261,7 @@ async def _send_album(client, channel, chunks, media, reply_to, state, source_id
 
 async def _send_individual_media(client, channel, chunks, media, reply_to, state,
                                  source_id):
-    """Send an ungroupable source media sequence in order."""
-    separate_context = any(kind in NO_CAPTION_KINDS for _path, kind in media)
-    media_reply_to = (
-        await _send_media_context(
-            client, channel, chunks, reply_to, state, source_id,
-        )
-        if separate_context else reply_to
-    )
+    """Send an ungroupable source media sequence in order, captioning its final item."""
     first_text, first_ents = chunks[0]
     state.setdefault("multi_media_ids", [])
     sent_final_item = False
@@ -276,10 +269,10 @@ async def _send_individual_media(client, channel, chunks, media, reply_to, state
         index = len(state["multi_media_ids"])
         path, kind = media[index]
         is_final_item = index == len(media) - 1
-        caption = first_text if is_final_item and not separate_context else ""
-        entities = first_ents if caption else None
+        caption = first_text if is_final_item else ""
+        entities = first_ents if is_final_item else None
         sent_msg = await uploads.send_media_item(
-            client, channel, path, kind, media_reply_to, source_id,
+            client, channel, path, kind, reply_to, source_id,
             caption=caption, entities=entities,
         )
         state["multi_media_ids"].append(sent_msg.id)
@@ -290,7 +283,8 @@ async def _send_individual_media(client, channel, chunks, media, reply_to, state
                 source_id=source_id, message=sent_msg,
             )
             sent_final_item = is_final_item
-    if not separate_context and first_text and not sent_final_item:
+    # On resume, also verify the caption on the final already-uploaded item.
+    if first_text and not sent_final_item:
         await uploads.ensure_media_caption(
             client, channel, state["multi_media_ids"][-1],
             first_text, first_ents, source_id=source_id,
@@ -315,7 +309,7 @@ async def _send_multiple_media(client, channel, chunks, media, reply_to, state, 
         await _send_album(client, channel, chunks, media, reply_to, state, source_id)
 
     rest = chunks[1:]
-    if rest and "media_context_prog" not in state:
+    if rest:
         group_ids = (
             state.get("album_message_ids")
             or state.get("multi_media_ids")
@@ -325,16 +319,6 @@ async def _send_multiple_media(client, channel, chunks, media, reply_to, state, 
             client, channel, rest, group_ids[-1], state, "tail_prog", source_id
         )
     return state["album_id"]
-
-
-async def _send_media_context(client, channel, chunks, reply_to, state, source_id):
-    """Send text context visibly before media whose clients hide media captions."""
-    if not any(text.strip() for text, _entities in chunks):
-        return reply_to
-    await _send_text_chunks(
-        client, channel, chunks, reply_to, state, "media_context_prog", source_id,
-    )
-    return state["media_context_prog"]["last"]
 
 
 async def _send_text_only(client, channel, chunks, reply_to, state, source_id):
@@ -351,34 +335,26 @@ async def _send_text_only(client, channel, chunks, reply_to, state, source_id):
 
 async def _send_single_media(client, channel, chunks, media, reply_to, state, source_id):
     first_text, first_ents = chunks[0]
+    rest = chunks[1:]
     path, kind = media[0]
-    separate_context = kind in NO_CAPTION_KINDS
-    media_reply_to = (
-        await _send_media_context(
-            client, channel, chunks, reply_to, state, source_id,
-        )
-        if separate_context else reply_to
-    )
     if "media_id" not in state:
         media_msg = await uploads.send_media_item(
-            client, channel, path, kind, media_reply_to, source_id,
-            caption="" if separate_context else first_text,
-            entities=None if separate_context else first_ents,
+            client, channel, path, kind, reply_to, source_id,
+            caption=first_text, entities=first_ents,
         )
         state["media_id"] = media_msg.id
         progress.save_state(state["src"], state)
-        if not separate_context:
-            await uploads.ensure_media_caption(
-                client, channel, media_msg.id, first_text, first_ents,
-                source_id=source_id, message=media_msg,
-            )
-    elif not separate_context:
+        await uploads.ensure_media_caption(
+            client, channel, media_msg.id, first_text, first_ents,
+            source_id=source_id, message=media_msg,
+        )
+    else:
         await uploads.ensure_media_caption(
             client, channel, state["media_id"], first_text, first_ents,
             source_id=source_id,
         )
-    if not separate_context and len(chunks) > 1:
-        await _send_text_chunks(client, channel, chunks[1:], state["media_id"],
+    if rest:
+        await _send_text_chunks(client, channel, rest, state["media_id"],
                                 state, "tail_prog", source_id)
     return state["media_id"]
 
