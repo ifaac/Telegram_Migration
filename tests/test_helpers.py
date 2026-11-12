@@ -944,7 +944,7 @@ class AsyncSendTests(unittest.TestCase):
             )
             state = {"src": "caption-repair"}
             bold = tl.MessageEntityBold(offset=0, length=5)
-            caption = "Alice\\n12 March 2023\\n\\nhello"
+            caption = "Alice\n12 March 2023\n\nhello"
             with patch.object(progress, "save_state"):
                 result = await sending._send_single_media(
                     client, "channel", [(caption, [bold])],
@@ -961,6 +961,36 @@ class AsyncSendTests(unittest.TestCase):
             self.assertNotIn("send_message", [call[0] for call in calls])
             self.assertTrue(state["media_caption_verified"])
         asyncio.run(scenario())
+
+    def test_joined_forward_author_without_repeated_date_keeps_last_timestamp(self):
+        timestamp = datetime(2026, 5, 10, 17, 0, 58)
+        context = {
+            "last_forward_name": "",
+            "last_forward_timestamp": None,
+            "last_forward_timestamp_has_time": False,
+            "last_forward_timestamp_has_seconds": False,
+        }
+        first = {
+            "is_forwarded": True,
+            "joined": False,
+            "forward_name": "Valerie Demian",
+            "forward_timestamp": timestamp,
+            "forward_timestamp_has_time": True,
+            "forward_timestamp_has_seconds": True,
+        }
+        repeated_author = {
+            "is_forwarded": True,
+            "joined": True,
+            "forward_name": "Valerie Demian",
+            "forward_timestamp": None,
+            "forward_timestamp_has_time": False,
+            "forward_timestamp_has_seconds": False,
+        }
+        htmlexport.inherit_forwarded_sender(first, context)
+        htmlexport.inherit_forwarded_sender(repeated_author, context)
+        self.assertEqual(repeated_author["forward_timestamp"], timestamp)
+        self.assertTrue(repeated_author["forward_timestamp_has_time"])
+        self.assertTrue(repeated_author["forward_timestamp_has_seconds"])
 
     def test_document_upload_forces_document_and_disables_reparsing(self):
         async def scenario():
