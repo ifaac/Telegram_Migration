@@ -1925,12 +1925,11 @@ class PipelineTests(unittest.TestCase):
                 '<div class="from_name">⛯⛯</div>'
                 if source_id in (454, 463) else ""
             )
+            # One caption belongs to this whole source album. Later
+            # captionless members must remain eligible to join it.
             caption_html = (
                 '<div class="text">Paranoid schizophrenia<br>You want more?</div>'
-                if source_id == 458 else (
-                    f'<div class="text">Different caption on item {source_id}</div>'
-                    if source_id == 459 else ""
-                )
+                if source_id == 458 else ""
             )
             records.append(
                 f'<div class="message default clearfix{classes}" id="message{source_id}">'
@@ -1961,7 +1960,7 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual([row["msg_id"] for row in groups["448"]], list(map(str, range(448, 458))))
         self.assertEqual([row["msg_id"] for row in groups["458"]], list(map(str, range(458, 465))))
         self.assertEqual(groups["458"][0]["body_text"], "Paranoid schizophrenia\nYou want more?")
-        self.assertEqual(groups["458"][1]["body_text"], "Different caption on item 459")
+        self.assertTrue(all(not row["body_text"] for row in groups["458"][1:]))
         caption, _entities = album.caption_for_group(groups["458"])
         self.assertIn("Paranoid schizophrenia\nYou want more?", caption)
         self.assertIn("Forwarded from espritzeit", caption)
@@ -1978,7 +1977,6 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(first_kwargs["caption"], [""] * 9 + [first_caption])
         self.assertEqual(second_kwargs["caption"], [""] * 6 + [second_caption])
         self.assertIn("Paranoid schizophrenia\nYou want more?", second_kwargs["caption"][-1])
-        self.assertIn("Different caption on item 459", second_kwargs["caption"][-1])
         self.assertIn("Forwarded from espritzeit", second_kwargs["caption"][-1])
         self.assertFalse(any("Paranoid schizophrenia" in text for text in client.texts()))
         grouped_ids = {message.grouped_id for message in client.messages.values()
