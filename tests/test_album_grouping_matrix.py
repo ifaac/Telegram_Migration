@@ -86,6 +86,25 @@ class AlbumGroupingMatrixTests(unittest.TestCase):
         continuation["forward_reply_src_id"] = "901"
         self.assertFalse(album._album_records_compatible(first, continuation))
 
+    def test_different_nonempty_captions_are_a_boundary_even_when_joined(self):
+        first = self._record(0, "document", first=True)
+        continuation = self._record(1, "photo")
+        continuation["body_text"] = "a different caption"
+        continuation["joined"] = True
+
+        self.assertFalse(album._album_records_compatible(first, continuation))
+
+    def test_caption_conflict_is_detected_across_captionless_members(self):
+        first = self._record(0, "document", first=True)
+        middle = self._record(1, "photo")
+        middle["body_text"] = ""
+        final = self._record(2, "document")
+        final["body_text"] = "a different caption"
+
+        self.assertTrue(album._album_records_compatible(first, middle))
+        self.assertTrue(album._album_records_compatible(middle, final))
+        self.assertTrue(album._caption_conflicts_with_group([first, middle], final))
+
     def test_forwarded_album_items_need_original_timestamps_individually(self):
         first = self._record(0, "photo", first=True)
         continuation = self._record(1, "photo")
@@ -125,7 +144,7 @@ if __name__ == "__main__":
 
 class TelegramDesktopHtmlGroupingTests(unittest.TestCase):
     @staticmethod
-    def _message_html(message_id, outer_second, forward_second, path, kind, *, joined=False):
+    def _message_html(message_id, outer_second, forward_second, path, kind, *, joined=False, caption=""):
         outer = f"01.07.2026 21:46:{outer_second:02d} UTC+02:00"
         forwarded = f"04.06.2026 09:46:{forward_second:02d} UTC+02:00"
         classes = "message default clearfix" + (" joined" if joined else "")
@@ -157,28 +176,32 @@ class TelegramDesktopHtmlGroupingTests(unittest.TestCase):
             )
         else:
             raise AssertionError(f"Unsupported test media kind: {kind}")
+        caption_html = f'<div class="text">{caption}</div>' if caption else ""
         return (
             f'<div class="{classes}" id="message{message_id}"><div class="body">'
             f'<div class="pull_right date details" title="{outer}">21:46</div>'
             '<div class="forwarded body"><div class="from_name">Original author '
             f'<span class="date details" title="{forwarded}">04.06.2026</span></div>'
-            f'<div class="media_wrap clearfix">{anchor}</div></div></div></div>'
+            f'<div class="media_wrap clearfix">{anchor}</div>{caption_html}</div></div></div>'
         )
 
     def _infer(self, messages):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
-            for relative, _kind in messages:
+            for item in messages:
+                relative, _kind = item[:2]
                 path = root / relative
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_bytes(b"synthetic media")
             html_path = root / "messages.html"
             chunks = []
-            for index, (relative, kind) in enumerate(messages):
+            for index, item in enumerate(messages):
+                relative, kind = item[:2]
+                caption = item[2] if len(item) > 2 else ""
                 message_id = 319 + index
                 chunks.append(self._message_html(
                     message_id, index, index, relative, kind,
-                    joined=index > 0,
+                    joined=index > 0, caption=caption,
                 ))
             html_path.write_text(
                 "<html><body>" + "".join(chunks) + "</body></html>",
@@ -209,6 +232,44 @@ class TelegramDesktopHtmlGroupingTests(unittest.TestCase):
             ("round_video_messages/two.mp4", "round_video"),
         ])
         self.assertEqual(groups, {})
+
+    def test_distinct_captions_keep_mixed_document_and_photo_messages_separate(self):
+        groups = self._infer([
+            ("files/one.txt", "document", "document caption one"),
+            ("files/two.docx", "document", "document caption two"),
+            ("photos/one.jpg", "photo", "photo caption one"),
+            ("photos/two.jpg", "photo", "photo caption two"),
+        ])
+        self.assertEqual(groups, {})
+
+    def test_distinct_captions_split_a_run_even_when_separated_by_captionless_media(self):
+        groups = self._infer([
+            ("files/one.txt", "document", "caption A"),
+            ("photos/two.jpg", "photo", ""),
+            ("files/three.doc", "document", "caption B"),
+            ("photos/four.jpg", "photo", ""),
+        ])
+        self.assertEqual(list(groups), ["319", "321"])
+        self.assertEqual(
+            [item["msg_id"] for item in groups["319"]],
+            ["319", "320"],
+        )
+        self.assertEqual(
+            [item["msg_id"] for item in groups["321"]],
+            ["321", "322"],
+        )
+
+    def test_one_shared_caption_with_captionless_media_still_forms_group(self):
+        groups = self._infer([
+            ("files/one.pdf", "document", "one shared album caption"),
+            ("photos/two.jpg", "photo", ""),
+            ("photos/three.jpg", "photo", ""),
+        ])
+        self.assertEqual(list(groups), ["319"])
+        self.assertEqual(
+            [item["msg_id"] for item in groups["319"]],
+            ["319", "320", "321"],
+        )
 
     def test_ordinary_photo_video_album_is_still_inferred(self):
         groups = self._infer([
