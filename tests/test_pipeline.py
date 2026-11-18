@@ -1670,7 +1670,7 @@ class PipelineTests(unittest.TestCase):
             zip(specifications, calls)
         ):
             expected_caption = (
-                f"Archive owner\\n12 March 2023 · 10:{10 + index:02d}\\n\\n{caption}"
+                f"Archive owner\n12 March 2023 · 10:{10 + index:02d}\n\n{caption}"
             )
             self.assertEqual(call[2]["caption"], expected_caption)
         self.assertIn("sent=4", output)
@@ -2219,7 +2219,7 @@ class PipelineTests(unittest.TestCase):
                 ("stickers/first.webp", "sticker_static"),
                 ("photos/second.jpg", "photo"),
             ]
-            caption = "Forwarded from Original sender\\n5 November 2026"
+            caption = "Forwarded from Original sender\n5 November 2026"
             with patch.object(progress, "save_state"):
                 result = await sending._send_multiple_media(
                     client, "channel", [(caption, [])],
