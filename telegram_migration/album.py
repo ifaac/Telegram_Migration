@@ -98,6 +98,18 @@ def prepare_inferred_group(data, group, id_map, manual_done, partial, persist_id
     legacy_caption, legacy_caption_entities = caption_for_group_body(group)
     all_media = [item for member in group for item in member["media"]]
 
+    # When Telegram cannot represent this inferred source group as one native
+    # media album, keep every original message's own caption/author/time for
+    # the individual-upload fallback. Do not change captions for native albums.
+    if not exportmedia.album_compatible(all_media):
+        individual_captions = [caption_for_record(member) for member in group]
+        if len(individual_captions) != len(all_media):
+            raise RuntimeError(
+                "Inferred mixed-media group has a different number of source "
+                "records and media items; refusing to lose per-message attribution"
+            )
+        data["_individual_media_captions"] = individual_captions
+
     # Consecutive audio records are separate source messages, even when the
     # destination supports sending them together as one media group. Preserve
     # each record's own sender/date and body beside its corresponding audio.
