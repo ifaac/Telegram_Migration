@@ -257,8 +257,18 @@ def _is_tgs_sticker(path, kind):
 
 
 async def _send_individual_media(client, channel, chunks, media, reply_to, state,
-                                 source_id):
+                                 source_id, item_captions=None):
     first_text, first_ents = chunks[0]
+    item_caption_texts = item_caption_entities = None
+    if item_captions is not None:
+        if len(item_captions) != len(media):
+            raise RuntimeError(
+                f"Per-message caption count {len(item_captions)} "
+                f"does not match media count {len(media)} for source id={source_id}"
+            )
+        item_caption_texts, item_caption_entities, _continuations = (
+            inferred_album_item_caption_parts(item_captions)
+        )
     state.setdefault("multi_media_ids", [])
     captionable_sticker_kinds = {"sticker_static", "sticker_video"}
     has_captioned_sticker = any(
@@ -266,9 +276,13 @@ async def _send_individual_media(client, channel, chunks, media, reply_to, state
     )
     for index, (path, kind) in enumerate(media[:len(state["multi_media_ids"])]):
         if _is_tgs_sticker(path, kind):
+            sticker_caption = (
+                (item_caption_texts[index], item_caption_entities[index])
+                if item_caption_texts is not None else (first_text, first_ents)
+            )
             await _send_sticker_with_attribution(
                 client, channel, path, kind, reply_to,
-                [(first_text, first_ents)], state, source_id,
+                [sticker_caption], state, source_id,
                 item_index=index,
             )
     while len(state["multi_media_ids"]) < len(media):
@@ -276,21 +290,32 @@ async def _send_individual_media(client, channel, chunks, media, reply_to, state
         path, kind = media[index]
         is_final_item = index == len(media) - 1
         if _is_tgs_sticker(path, kind):
+            sticker_caption = (
+                (item_caption_texts[index], item_caption_entities[index])
+                if item_caption_texts is not None else (first_text, first_ents)
+            )
             sent_id = await _send_sticker_with_attribution(
                 client, channel, path, kind, reply_to,
-                [(first_text, first_ents)], state, source_id,
+                [sticker_caption], state, source_id,
                 item_index=index,
             )
             sent_msg = type("SentSticker", (), {"id": sent_id})()
         else:
-            # Every WebP/WebM sticker is posted separately, so each gets the
-            # source message caption. Other media keep the one-caption rule.
-            caption_on_item = (
-                kind in captionable_sticker_kinds
-                or (is_final_item and not has_captioned_sticker)
-            )
-            caption = first_text if caption_on_item else ""
-            entities = first_ents if caption_on_item else None
+            if item_caption_texts is not None:
+                # In an incompatible inferred group, every media item gets
+                # the caption belonging to its own original HTML message.
+                caption = item_caption_texts[index]
+                entities = item_caption_entities[index]
+            else:
+                # Preserve the historical behavior for non-inferred sends.
+                # Every WebP/WebM sticker is posted separately, so each gets
+                # the source message caption. Other media keep the one-caption rule.
+                caption_on_item = (
+                    kind in captionable_sticker_kinds
+                    or (is_final_item and not has_captioned_sticker)
+                )
+                caption = first_text if caption_on_item else ""
+                entities = first_ents if caption_on_item else None
             sent_msg = await uploads.send_media_item(
                 client, channel, path, kind, reply_to, source_id,
                 caption=caption, entities=entities,
@@ -388,10 +413,22 @@ async def _do_send(client, channel, chunks, media, reply_to, forward_source,
             )
 
         # The source records still form one group even when Telegram cannot
-        # represent the media combination as a native album. Preserve every
-        # item in source order, attach the caption to the first captionable
-        # item (or as a prefix for voice notes), and checkpoint each
-        # destination ID so an interrupted sequence resumes without duplicates.
+        # represent the media combination as a native album. The HTML records
+        # retained by prepare_inferred_group carry each item's own attribution.
+        item_captions = data.get("_individual_media_captions")
+        if item_captions is not None:
+            await _send_individual_media(
+                client, channel, chunks, media, reply_to, state, source_id,
+                item_captions=item_captions,
+            )
+            await send_inferred_album_item_caption_continuations(
+                client, channel, item_captions, state, source_id,
+                state.get("multi_media_ids", []),
+            )
+            return list(state.get("multi_media_ids", []))
+
+        # Backward-compatible path for older callers/state that do not carry
+        # the original per-message caption records.
         first_caption, continuation = inferred_album_caption_parts(
             album_caption, album_caption_entities,
         )
