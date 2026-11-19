@@ -1751,6 +1751,44 @@ class PipelineTests(unittest.TestCase):
         with config.use_settings(self.settings()):
             self.assertEqual(progress.load_id_map(), {"2": 1001})
 
+    def test_fully_mapped_inferred_messages_without_album_checkpoint_are_skipped_individually(self):
+        records = []
+        for source_id in (2, 3):
+            relative = f"files/document-{source_id}.png"
+            fakes.write_file(self.folder.name, relative)
+            attachment = (
+                '<div class="media_wrap clearfix">'
+                f'<a class="media clearfix pull_left block_link media_file" href="{relative}">'
+                '</a></div>'
+            )
+            records.append(
+                fakes.message(
+                    source_id, attachment, sender="Alice",
+                    classes="" if source_id == 2 else "joined",
+                    minute=source_id,
+                )
+            )
+        fakes.write_export(self.folder.name, records)
+
+        # Simulate an older successful migration where the source messages
+        # were posted independently and only their source->destination IDs
+        # were recorded. There is deliberately no album_message_ids checkpoint.
+        with config.use_settings(self.settings()):
+            progress.append_id_map("2", 1001)
+            progress.append_id_map("3", 1002)
+
+        client, output, _ = self.run_once()
+
+        # Existing mappings are authoritative: don't re-upload the messages
+        # and don't require their destination grouped_id values to match.
+        self.assertEqual(client.kinds("send_file"), [])
+        self.assertEqual(client.kinds("send_message"), [])
+        self.assertNotIn("audited existing Telegram album", output)
+        self.assertIn("no native-album checkpoint", output)
+        self.assertIn("failed=0", output)
+        with config.use_settings(self.settings()):
+            self.assertEqual(progress.load_id_map(), {"2": 1001, "3": 1002})
+
     def test_dry_run_counts_inferred_album_members_only_once(self):
         records = [fakes.message(1, fakes.text("before"), sender="Alice", minute=1)]
         for source_id in (2, 3):

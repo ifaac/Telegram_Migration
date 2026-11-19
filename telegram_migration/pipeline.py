@@ -114,9 +114,25 @@ async def _process_message(elem, client, channel, id_map, partial, pending_repli
                 for member_id in data["_album_source_ids"]
         ):
             if all(member_id in id_map for member_id in data["_album_source_ids"]):
-                await album.verify_mapped_album(
-                    client, channel, data, id_map, partial, source_id
-                )
+                # An ID mapping proves that every source message was already
+                # migrated, but it does not prove that an inferred source run
+                # was sent as one native Telegram album. Older runs may have
+                # sent these messages independently before album inference
+                # existed, or may have preserved a non-native media sequence.
+                # Re-verify grouped_id only when the partial-state file has an
+                # explicit album_message_ids checkpoint from the album sender.
+                saved_album_state = partial.get(str(source_id), {}) or {}
+                if saved_album_state.get("album_message_ids"):
+                    await album.verify_mapped_album(
+                        client, channel, data, id_map, partial, source_id
+                    )
+                else:
+                    member_range = ",".join(data["_album_source_ids"])
+                    print(
+                        f"    preserving {len(data['_album_source_ids'])} already-mapped "
+                        f"source messages as completed individual/existing posts "
+                        f"(ids={member_range}; no native-album checkpoint)"
+                    )
             mark_completed = True
             return
 
