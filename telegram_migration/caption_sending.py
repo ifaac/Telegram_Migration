@@ -4,7 +4,7 @@ from . import config
 
 
 def inferred_album_item_caption_parts(item_captions):
-    """Split each source audio message's caption independently for its album item."""
+    """Split each source message's caption independently for its media item."""
     from .textutil import split_with_entities
 
     captions = []
@@ -25,7 +25,7 @@ def inferred_album_item_caption_parts(item_captions):
 async def send_inferred_album_item_caption_continuations(
     client, channel, item_captions, state, source_id, album_message_ids,
 ):
-    """Reply to the corresponding audio item only when its own caption overflows."""
+    """Reply to each corresponding media item only when its caption overflows."""
     from .sending import _send_text_chunks
 
     _captions, _entities, continuations = inferred_album_item_caption_parts(
