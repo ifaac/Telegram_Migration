@@ -33,7 +33,7 @@ async def send_inferred_album_item_caption_continuations(
     )
     if len(album_message_ids) != len(continuations):
         raise RuntimeError(
-            f"Cannot restore per-item audio captions for source id={source_id}: "
+            f"Cannot restore per-item captions for source id={source_id}: "
             "caption and destination item counts differ"
         )
     for index, (message_id, extra_chunks) in enumerate(
