@@ -19,7 +19,7 @@ from lxml import etree
 from telethon.tl import types as tl
 
 from telegram_migration import (
-    bigfiles, config, customemoji, exportmedia, formatfallback, htmlexport, mediatools, progress,
+    album, bigfiles, config, customemoji, exportmedia, formatfallback, htmlexport, mediatools, progress,
     reaction_archive, richtext, sending, textutil, uploads,
 )
 
@@ -1030,6 +1030,91 @@ class AsyncSendTests(unittest.TestCase):
             [("a.mp3", "audio"), ("b.pdf", "document")],
         ):
             self.assertFalse(exportmedia.album_compatible(media))
+
+    def test_inferred_mixed_document_photo_group_keeps_each_source_attribution(self):
+        async def scenario():
+            group = [
+                {
+                    "msg_id": "900",
+                    "timestamp": datetime(2024, 9, 9, 14, 0),
+                    "sender": "Niko",
+                    "service_event": False,
+                    "is_forwarded": False,
+                    "body_text": "first document caption",
+                    "body_entities": [],
+                    "media": [("documents/first.txt", "document")],
+                },
+                {
+                    "msg_id": "901",
+                    "timestamp": datetime(2024, 9, 9, 14, 10),
+                    "sender": "Niko",
+                    "service_event": False,
+                    "is_forwarded": False,
+                    "body_text": "photo caption",
+                    "body_entities": [],
+                    "media": [("photos/later.jpg", "photo")],
+                },
+            ]
+            data = dict(group[0])
+            self.assertTrue(album.prepare_inferred_group(
+                data, group, {}, set(), {}, lambda _src, _dst: None,
+            ))
+            self.assertIn("_individual_media_captions", data)
+            self.assertEqual(len(data["_individual_media_captions"]), 2)
+
+            calls = []
+
+            async def send_file(channel, path, **kwargs):
+                calls.append((path, dict(kwargs)))
+                return SimpleNamespace(id=800 + len(calls))
+
+            client = SimpleNamespace(send_file=send_file)
+            state = {"src": "900"}
+            with patch.object(progress, "save_state"):
+                result = await sending._do_send(
+                    client, "channel", [("", [])], data["media"], None, None,
+                    state, None, "900", data,
+                )
+
+            self.assertEqual(result, [801, 802])
+            self.assertEqual([item[0] for item in calls], [
+                "documents/first.txt", "photos/later.jpg",
+            ])
+            first_caption = calls[0][1]["caption"]
+            second_caption = calls[1][1]["caption"]
+            self.assertIn("Niko", first_caption)
+            self.assertIn("14:00", first_caption)
+            self.assertIn("first document caption", first_caption)
+            self.assertNotIn("14:10", first_caption)
+            self.assertIn("Niko", second_caption)
+            self.assertIn("14:10", second_caption)
+            self.assertIn("photo caption", second_caption)
+            self.assertNotIn("14:00", second_caption)
+            self.assertEqual(state["multi_media_ids"], [801, 802])
+
+        asyncio.run(scenario())
+
+    def test_compatible_inferred_group_does_not_get_individual_fallback_captions(self):
+        group = [
+            {
+                "msg_id": "910", "timestamp": datetime(2024, 9, 9, 14, 0),
+                "sender": "Niko", "service_event": False, "is_forwarded": False,
+                "body_text": "one", "body_entities": [],
+                "media": [("documents/one.txt", "document")],
+            },
+            {
+                "msg_id": "911", "timestamp": datetime(2024, 9, 9, 14, 1),
+                "sender": "Niko", "service_event": False, "is_forwarded": False,
+                "body_text": "two", "body_entities": [],
+                "media": [("documents/two.txt", "document")],
+            },
+        ]
+        data = dict(group[0])
+        self.assertTrue(album.prepare_inferred_group(
+            data, group, {}, set(), {}, lambda _src, _dst: None,
+        ))
+        self.assertTrue(exportmedia.album_compatible(data["media"]))
+        self.assertNotIn("_individual_media_captions", data)
 
     def test_inferred_incompatible_media_group_sends_in_order_and_returns_all_ids(self):
         async def scenario():
