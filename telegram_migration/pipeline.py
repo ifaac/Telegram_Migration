@@ -193,7 +193,7 @@ async def _process_message(elem, client, channel, id_map, partial, pending_repli
         timestamp = data["timestamp"]
         if data.get("service_event"):
             header = compose_message_header(
-                timestamp, "Telegram service event", date_only=True
+                timestamp, "Telegram service event",\n                date_only=data.get("timestamp_date_only", timestamp is None)
             )
         else:
             has_sticker = any(
