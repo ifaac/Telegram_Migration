@@ -53,6 +53,35 @@ def parse_export_date(s):
         return None
 
 
+def extract_service_event_timestamp(msg_div, current_date=None):
+    """Return a service event's own timestamp and whether it is date-only.
+
+    Prefer the event's date/details title, then its visible date text. If the
+    export exposes only a clock, combine it with the surrounding date divider.
+    Never invent a clock when the HTML does not contain one.
+    """
+    clock_re = re.compile(r"\\b(\\d{1,2}:\\d{2}(?::\\d{2})?)\\b")
+    for element in msg_div.iter():
+        if not isinstance(element.tag, str) or "date" not in css_classes(element):
+            continue
+        raw_values = [(element.get("title") or "").strip(), inner_text(element).strip()]
+        for raw in raw_values:
+            if not raw:
+                continue
+            parsed = parse_export_date(raw)
+            clock = clock_re.search(raw)
+            if parsed is not None:
+                return parsed, not bool(clock)
+            if current_date is not None and clock:
+                clock_format = "%H:%M:%S" if clock.group(1).count(":") == 2 else "%H:%M"
+                try:
+                    parsed_time = datetime.strptime(clock.group(1), clock_format).time()
+                    return datetime.combine(current_date.date(), parsed_time), False
+                except ValueError:
+                    pass
+    return current_date, current_date is not None
+
+
 def _forwarded_body(msg_div):
     """Return Telegram Desktop's forwarded-message body, not its avatar.
 
@@ -287,8 +316,8 @@ def extract_service_event_data(msg_div, current_date=None):
     return {
         "msg_id": match.group(1),
         "joined": False,
-        "timestamp": current_date,
-        "timestamp_date_only": current_date is not None,
+        "timestamp": extract_service_event_timestamp(msg_div, current_date)[0],
+        "timestamp_date_only": extract_service_event_timestamp(msg_div, current_date)[1],
         "service_event": True,
         "sender": "",
         "forward_header": "",
