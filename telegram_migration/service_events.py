@@ -1,10 +1,9 @@
-"""Parse pin references and timestamps without changing service-message content."""
+"""Parse Telegram service-event references and timestamps."""
 
 import re
-from datetime import datetime
 
 from .htmlutil import css_classes, find_first, inner_text
-from .htmlexport import parse_export_date
+from .htmlexport import extract_service_event_timestamp
 from .richtext import parse_rich_text
 
 
@@ -24,28 +23,9 @@ def extract_pinned_message_id(msg_div):
 
 
 def extract_pin_event_timestamp(msg_div, current_date=None):
-    """Read a pin event's own timestamp for the pin audit report only."""
-    clock_re = re.compile(r"\b(\d{1,2}:\d{2}(?::\d{2})?)\b")
-    for element in msg_div.iter():
-        if not isinstance(element.tag, str) or "date" not in css_classes(element):
-            continue
-        raw_values = [element.get("title") or "", inner_text(element)]
-        for raw in raw_values:
-            raw = raw.strip()
-            if not raw:
-                continue
-            parsed = parse_export_date(raw)
-            clock = clock_re.search(raw)
-            if parsed is not None:
-                return parsed
-            if current_date is not None and clock:
-                clock_format = "%H:%M:%S" if clock.group(1).count(":") == 2 else "%H:%M"
-                try:
-                    parsed_time = datetime.strptime(clock.group(1), clock_format).time()
-                    return datetime.combine(current_date.date(), parsed_time)
-                except ValueError:
-                    pass
-    return current_date
+    """Backward-compatible timestamp accessor for the pin audit report."""
+    timestamp, _date_only = extract_service_event_timestamp(msg_div, current_date)
+    return timestamp
 
 
 def extract_service_event_data(msg_div, current_date=None, *, pinned_message_id=None):
