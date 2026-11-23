@@ -60,7 +60,7 @@ def extract_service_event_timestamp(msg_div, current_date=None):
     export exposes only a clock, combine it with the surrounding date divider.
     Never invent a clock when the HTML does not contain one.
     """
-    clock_re = re.compile(r"\\b(\\d{1,2}:\\d{2}(?::\\d{2})?)\\b")
+    clock_re = re.compile(r"\b(\d{1,2}:\d{2}(?::\d{2})?)\b")
     for element in msg_div.iter():
         if not isinstance(element.tag, str) or "date" not in css_classes(element):
             continue
