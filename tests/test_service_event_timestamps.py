@@ -44,6 +44,16 @@ class ServiceEventTimestampTests(unittest.TestCase):
         self.assertEqual(data["timestamp"], datetime(2026, 8, 19, 21, 46, 54))
         self.assertFalse(data["timestamp_date_only"])
 
+    def test_date_title_and_visible_clock_are_combined(self):
+        event = self.event(
+            '<div class="pull_right date details" title="19.08.2026">21:46</div>'
+        )
+        data = htmlexport.extract_service_event_data(
+            event, datetime(2026, 8, 19)
+        )
+        self.assertEqual(data["timestamp"], datetime(2026, 8, 19, 21, 46))
+        self.assertFalse(data["timestamp_date_only"])
+
     def test_event_without_time_falls_back_to_date_only(self):
         event = self.event()
         data = htmlexport.extract_service_event_data(
