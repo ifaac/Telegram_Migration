@@ -57,10 +57,11 @@ def extract_service_event_timestamp(msg_div, current_date=None):
     """Return a service event's own timestamp and whether it is date-only.
 
     Prefer the event's date/details title, then its visible date text. If the
-    export exposes only a clock, combine it with the surrounding date divider.
-    Never invent a clock when the HTML does not contain one.
+    export exposes a date and a separate clock, combine them. Never invent a
+    clock when the HTML does not contain one.
     """
     clock_re = re.compile(r"\b(\d{1,2}:\d{2}(?::\d{2})?)\b")
+    date_fallback = None
     for element in msg_div.iter():
         if not isinstance(element.tag, str) or "date" not in css_classes(element):
             continue
@@ -71,16 +72,22 @@ def extract_service_event_timestamp(msg_div, current_date=None):
             parsed = parse_export_date(raw)
             clock = clock_re.search(raw)
             if parsed is not None:
-                return parsed, not bool(clock)
-            if current_date is not None and clock:
-                clock_format = "%H:%M:%S" if clock.group(1).count(":") == 2 else "%H:%M"
-                try:
-                    parsed_time = datetime.strptime(clock.group(1), clock_format).time()
-                    return datetime.combine(current_date.date(), parsed_time), False
-                except ValueError:
-                    pass
+                if clock:
+                    return parsed, False
+                date_fallback = parsed
+                continue
+            if clock:
+                base_date = date_fallback or current_date
+                if base_date is not None:
+                    clock_format = "%H:%M:%S" if clock.group(1).count(":") == 2 else "%H:%M"
+                    try:
+                        parsed_time = datetime.strptime(clock.group(1), clock_format).time()
+                        return datetime.combine(base_date.date(), parsed_time), False
+                    except ValueError:
+                        pass
+    if date_fallback is not None:
+        return date_fallback, True
     return current_date, current_date is not None
-
 
 def _forwarded_body(msg_div):
     """Return Telegram Desktop's forwarded-message body, not its avatar.
