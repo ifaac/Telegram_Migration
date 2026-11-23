@@ -58,6 +58,17 @@ class ServiceEventTimestampTests(unittest.TestCase):
         self.assertIn("19 August 2026", header)
         self.assertNotIn("·", header)
 
+    def test_shared_service_event_parser_uses_the_same_timestamp(self):
+        event = self.event(
+            '<div class="pull_right date details" '
+            'title="19.08.2026 21:46:54 GMT+02:00">21:46</div>'
+        )
+        data = service_events.extract_service_event_data(
+            event, datetime(2026, 8, 19)
+        )
+        self.assertEqual(data["timestamp"], datetime(2026, 8, 19, 21, 46, 54))
+        self.assertFalse(data["timestamp_date_only"])
+
     def test_pin_audit_timestamp_uses_the_general_service_event_parser(self):
         event = self.event(
             '<div class="pull_right date details" '
