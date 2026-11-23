@@ -29,11 +29,10 @@ def extract_pin_event_timestamp(msg_div, current_date=None):
 
 
 def extract_service_event_data(msg_div, current_date=None, *, pinned_message_id=None):
-    """Extract a service event, preserving the original message text and date.
+    """Extract a service event with its own timestamp when the HTML provides one.
 
-    The archived service-event layout stays exactly as before pin restoration:
-    the surrounding date divider supplies the date, and the body is parsed
-    without removing or relocating any HTML elements.
+    The surrounding date divider is used only as a fallback. The event body
+    is parsed without removing or relocating any HTML elements.
     """
     classes = css_classes(msg_div)
     if "message" not in classes or "service" not in classes:
@@ -50,10 +49,12 @@ def extract_service_event_data(msg_div, current_date=None, *, pinned_message_id=
     if not body_text:
         return None
 
+    timestamp, timestamp_date_only = extract_service_event_timestamp(msg_div, current_date)
     return {
         "msg_id": match.group(1),
         "joined": False,
-        "timestamp": current_date,
+        "timestamp": timestamp,
+        "timestamp_date_only": timestamp_date_only,
         "service_event": True,
         "sender": "",
         "forward_header": "",
