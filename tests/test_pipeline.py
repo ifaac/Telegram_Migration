@@ -179,7 +179,8 @@ class PipelineTests(unittest.TestCase):
         ][0]
         self.assertEqual(
             event_call[1],
-            "Telegram service event\n\n"
+            "Telegram service event\n"
+            "12 March 2023 · 10:02\n\n"
             "10:02Alice pinned this message",
         )
         self.assertEqual(event_call[2]["reply_to"], 1001)
