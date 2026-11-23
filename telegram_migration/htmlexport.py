@@ -313,11 +313,12 @@ def extract_service_event_data(msg_div, current_date=None):
     if not body_text:
         return None
 
+    timestamp, timestamp_date_only = extract_service_event_timestamp(msg_div, current_date)
     return {
         "msg_id": match.group(1),
         "joined": False,
-        "timestamp": extract_service_event_timestamp(msg_div, current_date)[0],
-        "timestamp_date_only": extract_service_event_timestamp(msg_div, current_date)[1],
+        "timestamp": timestamp,
+        "timestamp_date_only": timestamp_date_only,
         "service_event": True,
         "sender": "",
         "forward_header": "",
